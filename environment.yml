@@ -1,0 +1,42 @@
+# Conda environment for meta_learner/ and data_adapter/ (training + inference
+# of the MetaLearner ensemble, plus the data-format-adapter scripts).
+#
+# Each base_model/* submodule has its own separate environment (see its own
+# README/environment.yml) -- they are invoked as independent processes via
+# pipeline/*.sh, never imported into this environment.
+#
+# Setup:
+#   conda env create -f environment.yml
+#   conda activate adaptivehit
+
+name: adaptivehit
+
+channels:
+  - conda-forge
+  - pytorch
+  - defaults
+
+dependencies:
+  - python=3.10
+  - pip
+
+  # ── Scientific stack ──────────────────────────────────────────────────────
+  - numpy>=1.24,<2.0
+  - scipy
+  - pandas>=2.0
+  - scikit-learn
+
+  # ── Chemistry ─────────────────────────────────────────────────────────────
+  - rdkit
+
+  # ── Runtime utils ─────────────────────────────────────────────────────────
+  - tqdm
+
+  # ── Deep learning ─────────────────────────────────────────────────────────
+  # CPU build shown here for portability; swap for a CUDA build (see
+  # https://pytorch.org/get-started/locally/) if training on GPU.
+  - pytorch::pytorch
+  - pytorch::cpuonly
+
+  - pip:
+    - fair-esm==2.0.0   # ESM-2 protein embeddings (embedding generation only)

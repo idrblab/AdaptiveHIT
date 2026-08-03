@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+.DS_Store
+
+# Local run artifacts (job/results/log dirs produced by running the pipeline)
+myouts/
+*.egg-info/
+
+# Local conda/venv
+.venv/
+venv/

@@ -1,0 +1,12 @@
+[submodule "base_model/ConPLex_dev"]
+	path = base_model/ConPLex_dev
+	url = file:///home/zhuyimiao/AOEDrug/_release_staging/ConPLex_dev
+[submodule "base_model/DrugBAN"]
+	path = base_model/DrugBAN
+	url = file:///home/zhuyimiao/AOEDrug/_release_staging/DrugBAN
+[submodule "base_model/TransformerCPI"]
+	path = base_model/TransformerCPI
+	url = file:///home/zhuyimiao/AOEDrug/_release_staging/TransformerCPI
+[submodule "base_model/DeepConv-DTI"]
+	path = base_model/DeepConv-DTI
+	url = file:///home/zhuyimiao/AOEDrug/_release_staging/DeepConv-DTI
