@@ -83,19 +83,54 @@ git clone --recurse-submodules <this-repo-url>
 cd AdaptiveHIT
 conda env create -f environment.yml
 conda activate adaptivehit
-
-# Ensemble inference with the shipped pretrained checkpoint, against the
-# worked example's already-merged data:
 cd meta_learner
+```
+
+**No setup needed** -- average/vote/weighted-static-logistic-regression
+ensembling only needs the four base models' predictions, already present in
+the worked example's merged data:
+
+```bash
 python predict.py \
-    --input_dir ../data/toy_dataset \
+    --input_dir ../data/toy_dataset/end_merged \
     --output_dir /tmp/adaptivehit_out \
+    --weights_dir ../data/toy_dataset/weights \
+    --strategies average vote-all-1 weighted_logistic_balanced \
     --eval
 ```
 
-`predict.py --model_dir`/`--strategies` default to the shipped pretrained
-checkpoint (`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`); point
-them at your own retrained checkpoint to use it instead.
+**Full MetaLearner ensemble** (the shipped pretrained checkpoint,
+`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`) additionally needs
+precomputed ESM-2 protein + X-Mol drug embeddings for whatever
+compounds/proteins you're predicting on -- these are dataset-specific and
+not shipped in this repo (only the trimmed model *weights* are, under
+`data_adapter/xmol_weights/`). Generate them once, then point `predict.py`
+at them:
+
+```bash
+# ESM-2 (per-protein .npy under {protein_emb_dir}/{datatype}/token_representations/):
+# use fair-esm directly, or reuse a precomputed cache if you have one.
+
+# X-Mol (per-drug .npy under {drug_emb_dir}/{datatype}/{drugid}/), from the shipped weights:
+python ../data_adapter/xmol_embed.py \
+    --drugs_csv ../data/toy_dataset/id/toy_dataset_drugs.csv \
+    --datatype toy_dataset \
+    --output_dir /path/to/drug_emb_dir
+python ../data_adapter/prebuild_xmol_cache.py \
+    ../data/toy_dataset toy_dataset /path/to/drug_emb_dir
+
+python predict.py \
+    --input_dir ../data/toy_dataset/end_merged \
+    --output_dir /tmp/adaptivehit_out \
+    --data_subdir toy_dataset \
+    --protein_emb_dir /path/to/protein_emb_dir \
+    --drug_emb_dir /path/to/drug_emb_dir \
+    --eval
+```
+
+`predict.py`'s `--model_dir`/`--strategies` default to the shipped
+pretrained checkpoint; point them at your own retrained checkpoint to use
+it instead.
 
 ### Retraining on your own data
 

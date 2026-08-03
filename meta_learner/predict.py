@@ -126,6 +126,11 @@ class EnsemblePredictor:
 
             config = override_config_paths(config, input_dir, self.protein_emb_dir, self.drug_emb_dir)
             self._configure_by_strategy(config, strategy)
+            # A checkpoint's saved config may carry whatever device it was trained
+            # on (e.g. 'cuda') -- always reset to the device this predictor is
+            # actually running on, or MetaLearner's construction fails on a
+            # CPU-only / different-GPU-topology machine.
+            config.device = self.device
             
             print(f"\n    [Config] Strategy: {config.strategy}")
             print(f"    [Config] Use protein rep: {config.use_protein_representation}")

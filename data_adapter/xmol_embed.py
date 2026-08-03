@@ -190,7 +190,8 @@ if __name__ == "__main__":
                     '(no PaddlePaddle/full X-Mol toolchain needed -- this is a pure-PyTorch '
                     're-implementation of the same ERNIE architecture)')
     parser.add_argument('--drugs_csv', type=str, required=True,
-                        help='CSV with drugid and SMILES columns (see data_adapter/id/*.csv)')
+                        help='CSV with a drugid column and a SMILES column '
+                             '(smiles/SMILES/Smiles/Compound_ID, e.g. data/toy_dataset/id/*_drugs.csv)')
     parser.add_argument('--datatype', type=str, required=True,
                         help='Subdirectory name under --output_dir (matches meta_config.data_subdir)')
     parser.add_argument('--output_dir', type=str, required=True,
@@ -198,10 +199,13 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     df = pd.read_csv(args.drugs_csv)
+    smiles_col = next((c for c in ['smiles', 'SMILES', 'Smiles', 'Compound_ID'] if c in df.columns), None)
+    if smiles_col is None:
+        raise ValueError(f"Could not find a SMILES column in {args.drugs_csv} (columns: {list(df.columns)})")
     out_dir = os.path.join(args.output_dir, args.datatype)
     n_ok, n_fail = 0, 0
     for _, row in df.iterrows():
-        drugid, smiles = row['drugid'], row['Compound_ID']
+        drugid, smiles = row['drugid'], row[smiles_col]
         drug_dir = os.path.join(out_dir, str(drugid))
         npy_path = os.path.join(drug_dir, f"{drugid}.npy")
         if os.path.exists(npy_path):
