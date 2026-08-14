@@ -1,69 +1,54 @@
 # Publishing checklist (maintainer-only)
 
 Everything below is prepared and committed **locally**; nothing has been
-pushed to GitHub. This is the exact sequence to get it live under the
-`idrb` organization as `yimiaozhu`. `gh` is already installed locally
-(`~/.local/bin/gh`) but not yet authenticated -- do that first.
+pushed to GitHub. This is the exact sequence to get it live at
+https://github.com/idrblab/AdaptiveHIT as `yimiaozhu`.
 
+**Architecture note:** `base_model/*` submodules are pinned directly at the
+original authors' own upstream commits (`samsledje/ConPLex_dev`,
+`peizhenbai/DrugBAN`, `lifanchen-simm/TransformerCPI`,
+`GIST-CSBL/DeepConv-DTI`) -- not forks. AdaptiveHIT's own additions to each
+live only as a patch under `patches/<name>.patch`, applied locally by
+`run.sh`. That means there's nothing to fork or push for the base models --
+you only ever publish this one repo.
+
+## 0. Install prerequisites (done -- no sudo needed)
+
+`gh` and `git-lfs` are now installed under `~/.local/bin` (no root
+required -- official prebuilt binaries downloaded straight from each
+project's GitHub Releases and extracted there, not via `apt`):
+
+```bash
+gh --version        # gh version 2.97.0
+git lfs version      # git-lfs/3.7.1
+```
+
+`~/.local/bin` was added to `PATH` via `~/.bashrc`; open a new terminal (or
+`source ~/.bashrc`) for it to take effect. `git lfs install` has already
+been run once (registers the LFS filter in `~/.gitconfig`, also no root
+needed) -- confirmed working: `git status` on the checkpoint/`xmol_weights`
+files is now clean (they were never actually modified; git just couldn't
+compare LFS pointers to their real binaries before `git-lfs` was
+installed), and `git lfs ls-files` correctly lists all tracked files.
+
+Only `gh auth login` is still up to you (interactive):
 ```bash
 gh auth login   # authenticate as yimiaozhu; choose HTTPS or SSH per your preference
 ```
 
-## 1. Push the 4 forked base-model repos
-
-Each is a fully-prepared local git repo (clean upstream history + a commit
-adding AdaptiveHIT's integration scripts/patches) sitting in
-`/home/zhuyimiao/AOEDrug/_release_staging/<name>/`. Create each as a repo
-under `idrb` and push:
+## 1. Push the main AdaptiveHIT repo
 
 ```bash
-cd /home/zhuyimiao/AOEDrug/_release_staging
-
-for name in ConPLex_dev DrugBAN TransformerCPI DeepConv-DTI; do
-    cd "$name"
-    gh repo create "idrb/$name" --public --source=. --remote=origin
-    git push -u origin "$(git branch --show-current)"   # TransformerCPI/DeepConv-DTI default to "master", the other two to "main"
-    cd ..
-done
-```
-
-If `idrb/<name>` already exists (e.g. a prior fork), use
-`git remote add origin git@github.com:idrb/<name>.git` and `git push -u
-origin main` instead of `gh repo create`.
-
-## 2. Wire the main repo's submodules to the real URLs
-
-Right now `.gitmodules` in `/home/zhuyimiao/AOEDrug/AdaptiveHIT` points at
-local `file://` paths (used only so this repo could be verified end-to-end
-before anything was pushed). Repoint each to the real GitHub URL you just
-created:
-
-```bash
-cd /home/zhuyimiao/AOEDrug/AdaptiveHIT
-
-git submodule set-url base_model/ConPLex_dev      https://github.com/idrb/ConPLex_dev.git
-git submodule set-url base_model/DrugBAN          https://github.com/idrb/DrugBAN.git
-git submodule set-url base_model/TransformerCPI   https://github.com/idrb/TransformerCPI.git
-git submodule set-url base_model/DeepConv-DTI     https://github.com/idrb/DeepConv-DTI.git
-
-git submodule sync
-git add .gitmodules
-git commit -m "Point submodules at published idrb/* forks"
-```
-
-## 3. Push the main AdaptiveHIT repo
-
-```bash
-cd /home/zhuyimiao/AOEDrug/AdaptiveHIT
-gh repo create idrb/AdaptiveHIT --public --source=. --remote=origin
+cd /mnt/hdd/data/zym/AOEDrug/AdaptiveHIT
+gh repo create idrblab/AdaptiveHIT --public --source=. --remote=origin
 git push -u origin main
 git push origin --tags   # if any tags were created
 ```
 
-`git lfs` is already initialized in this repo (`checkpoints/**/*.model`,
-`checkpoints/**/*.pth`, `data_adapter/xmol_weights/**` are tracked via
-`.gitattributes`) -- `git push` will automatically also push the LFS
-objects. Confirm afterward:
+`git lfs` tracking is already configured in this repo (`checkpoints/**/*.model`,
+`checkpoints/**/*.pth`, `data_adapter/xmol_weights/**` via `.gitattributes`)
+-- since `git-lfs` is installed (step 0), `git push` will automatically also
+push the LFS objects. Confirm afterward:
 
 ```bash
 git lfs ls-files          # should list the checkpoint + X-Mol weight files
@@ -74,19 +59,29 @@ repository by default -- this repo's LFS objects total ~423MB
 (checkpoints ~96MB + X-Mol weights ~327MB), so a single push fits, but
 enable GitHub's paid LFS data pack if the repo gets cloned frequently.
 
-## 4. Verify the public clone works
+## 2. Verify the public clone works
+
+This is the real test: a fresh clone with `--recurse-submodules` pulls each
+`base_model/*` submodule straight from its real upstream repo (no fork
+needed), then `run.sh` applies `patches/*.patch` on top automatically.
 
 ```bash
 cd /tmp
-git clone --recurse-submodules https://github.com/idrb/AdaptiveHIT.git
+git clone --recurse-submodules https://github.com/idrblab/AdaptiveHIT.git
 cd AdaptiveHIT
-conda env create -f environment.yml
+bash run.sh
 conda activate adaptivehit
-python meta_learner/predict.py --input_dir data/toy_dataset --output_dir /tmp/out --eval
+python meta_learner/predict.py \
+    --input_dir data/toy_dataset/end_merged \
+    --output_dir /tmp/out \
+    --weights_dir data/toy_dataset/weights \
+    --strategies average vote-all-1 weighted_logistic_balanced \
+    --eval
 ```
 
-## 5. Optional: clean up the local staging directory
+## 3. Optional: clean up the local staging directory
 
-Once pushed and verified, `/home/zhuyimiao/AOEDrug/_release_staging/` is no
-longer needed (the same content now lives in the pushed `idrb/*` repos) --
-safe to delete if you want to reclaim the disk space.
+`/mnt/hdd/data/zym/AOEDrug/_release_staging/` (the old forked-repo staging
+copies from before this switched to the pristine-submodule-plus-patch
+approach) is no longer needed by anything in this repo -- safe to delete if
+you want to reclaim the disk space.

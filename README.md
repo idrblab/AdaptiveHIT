@@ -1,161 +1,110 @@
-# AdaptiveHIT
+# AdaptiveHIT: Pair-Aware Ensemble Framework for Novel Hit Identification
 
-**AdaptiveHIT** is a pair-aware ensemble framework for novel hit
-identification, integrating four compound-protein interaction (CPI)
-prediction models -- **DeepConv-DTI**, **TransformerCPI**, **DrugBAN**, and
-**ConPLex** -- through an adaptive weighting strategy driven by a
-probability-guided attention fusion network. For each query, the four base
-models independently output an interaction probability, which is combined
-with **X-Mol** and **ESM-2** sequence representations of the compound and
-protein to adaptively weight each model's contribution and compute the final
-ensemble score. AdaptiveHIT outperforms every individual base model at
-discovering bioactive molecules with novel structural scaffolds, and
-interpretability analysis shows it identifies proteins' ligand binding sites
-and hot-spot residues with markedly higher precision than any single model.
+**AdaptiveHIT** is a pair-aware ensemble framework that adaptively integrates predictions from diverse base models by leveraging their complementary strengths while mitigating individual biases in novel hit identification. Benchmark evaluations demonstrated that this framework outperforms all base models across most scenarios, particularly in identifying bioactive molecules with novel scaffolds. Interpretability analyses further revealed that AdaptiveHIT achieves substantially much higher precision in recognizing ligand binding sites and hot-spot residues.
 
-A live demo server is available; see the manuscript (in preparation) for
-full methodology and benchmark results.
+![Model Architecture](./assets/AdaptiveHIT.png)
 
-## Pipeline
+---
 
-```
-base-model training  ──►  base-model prediction   ──►  merge predictions   ──►  meta-learner  ──►  ensemble
-(pipeline/base_retrain.sh)  + embedding extraction      + labels/IDs           training           prediction
-                             (pipeline/meta_train.sh,    (data_adapter/         (meta_learner/     (meta_learner/
-                              meta_predict.sh)            result_process_*,     meta_run_          predict.py)
-                                                           label_ori_merge.py)   training.py)
-```
+# Workflow & Quick Start
 
-1. **Train the 4 base models** on your own train/val/test split
-   (`pipeline/base_retrain.sh`) -- each base model is a separate git
-   submodule under `base_model/`, trained via its own
-   `main_integ_*.py` entrypoint.
-2. **Run each trained base model's predictions** and extract ESM-2/X-Mol
-   representations for every compound/protein (`pipeline/meta_train.sh`,
-   `pipeline/predict/integ_screen_*_predict.sh`).
-3. **Merge** the four base models' predictions with the original labels
-   (`data_adapter/result_process_data_integ_and_evalu.py`,
-   `data_adapter/label_ori_merge.py`).
-4. **Train the MetaLearner** ensemble on top of the merged predictions +
-   representations (`meta_learner/meta_run_training.py`).
-5. **Run ensemble inference** (`meta_learner/predict.py`) -- defaults to the
-   shipped pretrained checkpoint (`checkpoints/meta/`), or point it at your
-   own retrained one.
-
-`data/toy_dataset/` is a small, ready-to-run worked example covering steps
-3-5 (base-model predictions are already merged; see
-`data/toy_dataset/results_meta/` for expected output).
-
-## Repository layout
-
-```
-AdaptiveHIT/
-├── base_model/            # 4 base CPI models (git submodules, forked + patched)
-│   ├── ConPLex_dev/
-│   ├── DrugBAN/
-│   ├── TransformerCPI/
-│   └── DeepConv-DTI/
-├── meta_learner/           # MetaLearner ensemble: training + inference
-│   └── predict.py          # ensemble inference entrypoint (see Quickstart)
-├── data_adapter/            # data-format adapters between the shared dataset
-│   │                        # schema and each base model's native input format
-│   ├── xmol_weights/        # trimmed pretrained X-Mol weights (Git LFS)
-│   └── xmol_embed.py        # pure-PyTorch X-Mol embedder (no PaddlePaddle needed)
-├── pipeline/                # end-to-end orchestration shell scripts
-├── checkpoints/             # shipped pretrained weights (Git LFS)
-│   ├── base_models/         # the 4 trained base-model checkpoints
-│   └── meta/                # the trained MetaLearner checkpoint
-├── data/toy_dataset/         # small worked example (train/val/test + expected output)
-├── NOTICE.md                 # per-submodule license/attribution
-└── environment.yml           # conda env for meta_learner/ + data_adapter/
-```
-
-Each `base_model/*` submodule keeps its own conda environment (see its own
-`environment.yml`/`README.md`) since DeepConv-DTI needs a legacy
-TensorFlow-1/Keras stack while the other three are PyTorch-based -- they are
-never imported directly into `meta_learner/`, only invoked as separate
-processes via `pipeline/*.sh`.
-
-## Quickstart
+## Installation
 
 ```bash
 git clone --recurse-submodules <this-repo-url>
 cd AdaptiveHIT
-conda env create -f environment.yml
+bash run.sh
 conda activate adaptivehit
-cd meta_learner
 ```
 
-**No setup needed** -- average/vote/weighted-static-logistic-regression
-ensembling only needs the four base models' predictions, already present in
-the worked example's merged data:
+`run.sh` sets up everything in one pass: the main `adaptivehit` env (`environment.yml`, for `meta_learner/`+`data_adapter/`) plus one env per `base_model/*` submodule (`conplex`, `transformerCPI`, `DeepConv-DTI`, `drugban`), using each submodule's own documented dependencies -- DeepConv-DTI needs a legacy TensorFlow-1/Keras stack while the other three are PyTorch-based, so they're kept fully separate and never imported into `adaptivehit`, only invoked as separate processes via `pipeline/*.sh`. It's idempotent (safe to re-run, skips envs that already exist); if a given base model's env fails to solve (a few pin old CUDA/package versions from their original 2019-2023 releases), see the comments in `run.sh` or that submodule's own `README.md` and adjust by hand.
 
+---
+
+## Quickstart (toy dataset, zero configuration)
+
+Try this first: it runs end-to-end against the shipped `data/toy_dataset/` with every path already concrete, nothing to fill in.
+
+**Option A -- no-embedding ensembling** (average / majority vote / weighted static logistic regression). Needs only the four base models' predictions, which the toy dataset already ships pre-merged in `end_merged/`:
 ```bash
-python predict.py \
-    --input_dir ../data/toy_dataset/end_merged \
+python meta_learner/predict.py \
+    --input_dir data/toy_dataset/end_merged \
     --output_dir /tmp/adaptivehit_out \
-    --weights_dir ../data/toy_dataset/weights \
+    --weights_dir data/toy_dataset/weights \
     --strategies average vote-all-1 weighted_logistic_balanced \
     --eval
 ```
 
-**Full MetaLearner ensemble** (the shipped pretrained checkpoint,
-`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`) additionally needs
-precomputed ESM-2 protein + X-Mol drug embeddings for whatever
-compounds/proteins you're predicting on -- these are dataset-specific and
-not shipped in this repo (only the trimmed model *weights* are, under
-`data_adapter/xmol_weights/`). Generate them once, then point `predict.py`
-at them:
-
+**Option B -- full MetaLearner** (probability-guided attention fusion, the architecture in the figure above). Needs ESM-2 protein + X-Mol drug embeddings first; generate them straight into the directories `meta_config.py` already defaults to (`data/embeddings/esm2_t36_3B_UR50D/`, `data/embeddings/xmol/`), so `predict.py` picks them up with no extra flags:
 ```bash
-# ESM-2 (per-protein .npy under {protein_emb_dir}/{datatype}/token_representations/):
-# use fair-esm directly, or reuse a precomputed cache if you have one.
+python data_adapter/generate_esm2_embeddings.py \
+    --prots_csv data/toy_dataset/id/toy_dataset_prots.csv \
+    --datatype toy_dataset --output_dir data/embeddings/esm2_t36_3B_UR50D
 
-# X-Mol (per-drug .npy under {drug_emb_dir}/{datatype}/{drugid}/), from the shipped weights:
-python ../data_adapter/xmol_embed.py \
-    --drugs_csv ../data/toy_dataset/id/toy_dataset_drugs.csv \
-    --datatype toy_dataset \
-    --output_dir /path/to/drug_emb_dir
-python ../data_adapter/prebuild_xmol_cache.py \
-    ../data/toy_dataset toy_dataset /path/to/drug_emb_dir
+python data_adapter/xmol_embed.py \
+    --drugs_csv data/toy_dataset/id/toy_dataset_drugs.csv \
+    --datatype toy_dataset --output_dir data/embeddings/xmol
+python data_adapter/prebuild_xmol_cache.py data/toy_dataset toy_dataset data/embeddings/xmol
 
-python predict.py \
-    --input_dir ../data/toy_dataset/end_merged \
+python meta_learner/predict.py \
+    --input_dir data/toy_dataset/end_merged \
     --output_dir /tmp/adaptivehit_out \
     --data_subdir toy_dataset \
-    --protein_emb_dir /path/to/protein_emb_dir \
-    --drug_emb_dir /path/to/drug_emb_dir \
     --eval
 ```
+`--model_dir` defaults to the shipped pretrained checkpoint (`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`). `esm2_t36_3B_UR50D` is a 3B-parameter model (~11GB, downloaded once and cached by `fair-esm`) -- slow to load but the toy set is only 41 proteins / 49 drugs, so embedding generation itself is quick once loaded.
 
-`predict.py`'s `--model_dir`/`--strategies` default to the shipped
-pretrained checkpoint; point them at your own retrained checkpoint to use
-it instead.
+---
 
-### Retraining on your own data
+## Running AdaptiveHIT on Your Own Data (Optional)
 
-See `pipeline/base_retrain.sh` (per-base-model training),
-`pipeline/meta_train.sh` (full base-predict -> merge -> meta-train
-orchestration), and `pipeline/meta_predict.sh` (full pipeline ending in
-ensemble prediction) for the exact commands, each parameterized by your own
-`data_dir`/`model_env_dir` (this repo's own root).
+**Target users:** researchers who want predictions on their own compound-protein pairs, or who want to retrain the base models / MetaLearner from scratch, rather than just reproducing the toy-dataset walkthrough above. This is the only part of the workflow where you must supply your own paths, since these are inherently your own dataset and checkpoints -- everywhere else in this README already resolves to a concrete path.
 
-Embedding *generation* for a brand-new dataset needs:
-- **ESM-2** protein embeddings: the standard `fair-esm` package (`pip
-  install fair-esm`), no vendoring needed.
-- **X-Mol** drug embeddings: `data_adapter/xmol_embed.py` reuses the shipped
-  trimmed weights (a pure-PyTorch reimplementation of X-Mol's architecture,
-  no PaddlePaddle required) -- run it directly (`python xmol_embed.py
-  --drugs_csv ... --datatype ... --output_dir ...`) to produce the
-  per-drug `.npy` files `data_adapter/prebuild_xmol_cache.py` expects.
+All commands below assume you're in the repo root, so `model_env_dir`/`base_model_dir` arguments are just `$(pwd)`/`$(pwd)/base_model/<Name>`.
 
-## License
+**0.1 Run the 4 base models' predictions**, using the shipped pretrained checkpoints on your own test set (`<testset_dir>`, expected to contain `<testset_dir>/data/*.csv` or `*.txt` per base model -- see each script's own `find` pattern):
+```bash
+pipeline/predict/integ_screen_conplex_predict.sh \
+    checkpoints/base_models/model-0.0005-64-0.1-conplex-858.model '' <testset_dir> base_model/ConPLex_dev
+pipeline/predict/integ_screen_drugban_predict.sh \
+    checkpoints/base_models/model-0.0005-64-0.1-drugban-940.model '' <testset_dir> base_model/DrugBAN
+pipeline/predict/integ_screen_trans_predict.sh \
+    checkpoints/base_models/model-0.0005-128-0.1-trans-946.model '' <testset_dir> base_model/TransformerCPI
+pipeline/predict/integ_screen_deep_predict.sh \
+    checkpoints/base_models/model-0.0005-64-0.1-deep-969.model '' <testset_dir> base_model/DeepConv-DTI
+```
+(second argument is the CUDA device id; `''` runs on CPU). Or run the full orchestration in one call: `pipeline/meta_train.sh $(pwd)` (training-time) / `pipeline/meta_predict.sh $(pwd)` (inference-time) -- both are internal cluster-authored scripts with more hardcoded assumptions than the ones above, so expect to read/adjust them before use.
 
-AdaptiveHIT's own code is MIT-licensed (`LICENSE`). The four base models
-under `base_model/` each retain their own upstream license -- see
-`NOTICE.md`.
+**0.2 Generate embeddings** for your own compound/protein CSVs, same two commands as the Quickstart above but pointed at your own `--prots_csv`/`--drugs_csv`/`--datatype`.
+
+**0.3 Merge predictions with labels**:
+```bash
+python data_adapter/result_process_data_integ_and_evalu.py ...
+python data_adapter/label_ori_merge.py ...
+```
+
+**1. Retrain the base models** from scratch instead of using the shipped checkpoints, on your own train/val/test split (`<data_dir>`):
+```bash
+pipeline/base_retrain.sh <data_dir> $(pwd)
+```
+Each base model is a separate git submodule, trained via its own `main_integ_*.py` entrypoint (`base_model/<name>/.../main_integ_*.py`).
+
+**Retrain the MetaLearner** on your own merged Phase 0 output:
+```bash
+python meta_learner/meta_run_training.py \
+    --input_dir <phase0_merged_dir> --output_dir <outputs_dir> \
+    --data_subdir <name> --strategy probability_only
+```
+Then point `predict.py --model_dir` at your own retrained checkpoint instead of the shipped one.
+
+---
+
+# License & Attribution
+
+AdaptiveHIT's own code (`meta_learner/`, `data_adapter/`, `pipeline/`) is MIT-licensed (`LICENSE`). The four base models under `base_model/` each retain their own upstream license -- DeepConv-DTI is GPL-3.0 and is kept as an independent submodule/process so it never contaminates AdaptiveHIT's own MIT-licensed code; the other three are MIT/Apache-2.0. Full per-submodule provenance and the exact patches applied against each upstream repo are listed in `NOTICE.md`.
+
+**Data provenance:** the `data/toy_dataset/` splits are shipped as a ready-to-run worked example; the script recovering their exact derivation from the original raw ChEMBL source table was not available at release time (see `NOTICE.md`). A larger 5-fold cross-validation dataset used for the manuscript's robustness experiments is not included here -- contact the corresponding author for access.
 
 ## Citation
 
-A manuscript describing AdaptiveHIT is currently in preparation. Citation
-details will be added here once published.
+A manuscript describing AdaptiveHIT is currently in preparation. Citation details will be added here once published.

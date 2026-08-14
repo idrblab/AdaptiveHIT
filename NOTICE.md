@@ -2,12 +2,14 @@
 
 AdaptiveHIT's own code (`meta_learner/`, `data_adapter/`, `pipeline/`) is
 released under the MIT license (see `LICENSE`). The four base compound-protein
-interaction (CPI) models it ensembles are each a separate git submodule under
-`base_model/`, forked from the original authors' repositories with the
-minimal additions/patches needed to plug them into this project's training
-and prediction pipeline (see each submodule's own commit history for the
-exact diff against upstream). Each retains its own upstream license, listed
-below -- none of them are relicensed by this project.
+interaction (CPI) models it ensembles are each a pristine, unmodified git
+submodule under `base_model/`, pinned directly at a commit from the original
+authors' own repository -- not a maintained fork. The minimal
+additions/patches needed to plug each one into this project's training and
+prediction pipeline live in `patches/<name>.patch` in this repository (`git
+apply`'d onto the submodule by `run.sh`); see that patch file for the exact
+diff against upstream. Each submodule retains its own upstream license,
+listed below -- none of them are relicensed by this project.
 
 ## ConPLex (`base_model/ConPLex_dev`)
 
@@ -50,7 +52,9 @@ below -- none of them are relicensed by this project.
 ## DeepConv-DTI (`base_model/DeepConv-DTI`)
 
 - Upstream: https://github.com/GIST-CSBL/DeepConv-DTI
-- **License: GPL-3.0** -- kept in its own separate submodule/repository and
+- **License: GPL-3.0** -- kept as the pristine, unmodified upstream
+  submodule (AdaptiveHIT's own additions exist only as a local patch,
+  `patches/DeepConv-DTI.patch`, never committed into a maintained fork) and
   invoked as an independent process (never statically linked into
   AdaptiveHIT's own code), so AdaptiveHIT's own MIT-licensed code is
   unaffected; the GPL-3.0 terms apply to `base_model/DeepConv-DTI` itself.
