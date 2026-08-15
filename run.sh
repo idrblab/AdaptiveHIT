@@ -2,13 +2,15 @@
 # One-shot environment setup for AdaptiveHIT.
 #
 # Creates the main `adaptivehit` conda env (meta_learner/ + data_adapter/)
-# plus one env per base_model/* submodule, using the exact env names
+# plus one env per base_model/* model, using the exact env names
 # pipeline/*.sh already hardcodes (conplex, transformerCPI, DeepConv-DTI,
 # drugban) so those scripts work unmodified afterwards.
 #
-# Each base_model/* submodule vendors its own, independently pinned
-# dependency stack from its original 2019-2023 publication (see each
-# submodule's own README.md). Only ConPLex_dev ships a real environment.yml;
+# Each base_model/* directory is vendored (regular tracked files, not a git
+# submodule) with its own independently pinned dependency stack from its
+# original 2019-2023 publication (see each model's own README.md and
+# NOTICE.md for upstream provenance + the modifications applied on top).
+# Only ConPLex_dev ships a real environment.yml;
 # TransformerCPI/DeepConv-DTI/DrugBAN don't, so their install commands below
 # are reproduced verbatim from their README.md's documented requirements,
 # not invented. Some pin old CUDA/TensorFlow versions that may not resolve
@@ -24,34 +26,6 @@ cd "$SCRIPT_DIR"
 conda_env_exists() {
     conda env list | awk '{print $1}' | grep -qx "$1"
 }
-
-if [ ! -f base_model/ConPLex_dev/README.md ]; then
-    echo "[submodules] initializing git submodules"
-    git submodule update --init --recursive
-fi
-
-# ---------------------------------------------------------------------------
-# Apply AdaptiveHIT's integration patches to each pristine base_model/*
-# submodule. Each submodule is pinned at the original authors' own upstream
-# commit (not a fork) -- patches/<name>.patch (generated from the same diff
-# documented in NOTICE.md) adds the main_integ_*.py/predict_*.py entrypoints
-# and the few small upstream fixes on top. Idempotent: skips a submodule
-# whose patch marker file already exists.
-# ---------------------------------------------------------------------------
-declare -A PATCH_MARKER=(
-    [ConPLex_dev]=main_integ_conplex.py
-    [DrugBAN]=main_integ_drugban.py
-    [TransformerCPI]=GPCR/main_integ_trans.py
-    [DeepConv-DTI]=main_integ_DeepConvDTI.py
-)
-for name in ConPLex_dev DrugBAN TransformerCPI "DeepConv-DTI"; do
-    if [ -f "base_model/$name/${PATCH_MARKER[$name]}" ]; then
-        echo "[patch:$name] already applied, skipping"
-    else
-        echo "[patch:$name] applying patches/$name.patch"
-        git -C "base_model/$name" apply "$SCRIPT_DIR/patches/$name.patch"
-    fi
-done
 
 # ---------------------------------------------------------------------------
 # Main environment (meta_learner/ + data_adapter/) -- see environment.yml

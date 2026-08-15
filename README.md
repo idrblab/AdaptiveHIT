@@ -9,13 +9,13 @@
 ## Installation
 
 ```bash
-git clone --recurse-submodules <this-repo-url>
+git clone <this-repo-url>
 cd AdaptiveHIT
 bash run.sh
 conda activate adaptivehit
 ```
 
-`run.sh` applies AdaptiveHIT's patches to each `base_model/*` submodule and creates 5 conda envs (`adaptivehit`, `conplex`, `transformerCPI`, `DeepConv-DTI`, `drugban`) from each submodule's own documented dependencies. It's idempotent -- safe to re-run. If a base model's env fails to solve (a few pin old CUDA/package versions from their original 2019-2023 releases), see the comments in `run.sh` or that submodule's own `README.md`.
+A plain `git clone` brings in everything -- the 4 base models under `base_model/` are vendored directly into this repository (not git submodules), so there's no separate init step. `run.sh` creates 5 conda envs (`adaptivehit`, `conplex`, `transformerCPI`, `DeepConv-DTI`, `drugban`) from each base model's own documented dependencies. It's idempotent -- safe to re-run. If a base model's env fails to solve (a few pin old CUDA/package versions from their original 2019-2023 releases), see the comments in `run.sh` or that model's own `README.md`.
 
 Base-model and MetaLearner checkpoints (`checkpoints/`) and the X-Mol pretrained weights (`data_adapter/xmol_weights/`) are bundled via Git LFS and downloaded automatically by the `git clone` above (needs `git-lfs` installed). **ESM-2 is not bundled** -- it's fetched on first use, see Quickstart below.
 
@@ -56,7 +56,7 @@ python meta_learner/predict.py \
 
 > `--protein_emb_dir`/`--drug_emb_dir` look optional in `meta_config.py`'s defaults but aren't: the shipped checkpoint's saved config carries the original training cluster's absolute paths, and `predict.py` only overrides those when the flags are passed explicitly. Omitting them fails with `FileNotFoundError: Global feature library not found: ...`.
 
-`esm2_t36_3B_UR50D` (~5.4GB) downloads automatically on first run via `fair-esm`, cached to `~/.cache/torch/hub/checkpoints/`. That download isn't resumable; on an unreliable connection, fetch it yourself and let `fair-esm` find it already cached:
+`esm2_t36_3B_UR50D` (~5.4GB) downloads automatically on first run via `fair-esm`, cached to `~/.cache/torch/hub/checkpoints/`. On an unreliable connection, fetch it yourself and let `fair-esm` find it already cached:
 ```bash
 curl -fL -C - -o ~/.cache/torch/hub/checkpoints/esm2_t36_3B_UR50D.pt \
     https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t36_3B_UR50D.pt
@@ -81,7 +81,7 @@ pipeline/predict/integ_screen_deep_predict.sh    checkpoints/base_models/model-0
 | 1 | base-model checkpoint (shipped under `checkpoints/base_models/`) |
 | 2 | CUDA device id, or `''` for CPU |
 | 3 | `<testset_dir>`, expected to contain `<testset_dir>/data/<subset>/*.csv` |
-| 4 | absolute path to the base model's submodule directory |
+| 4 | absolute path to the base model's directory under `base_model/` |
 
 Merge the 4 base models' predictions with your ground-truth labels:
 ```bash
@@ -107,9 +107,30 @@ Then point `predict.py --model_dir` at your own retrained checkpoint instead of 
 
 ---
 
+## Adding or Replacing a Base Model
+
+The MetaLearner's fusion network and the data-merge scripts size themselves off however many base models you tell them about -- nothing is hardcoded to exactly 4.
+
+**1. Add the model's code** under `base_model/<Name>/`, following the pattern of the existing 4: a `main_integ_<name>.py` training entrypoint and `predict_<name>.py` inference entrypoint (see any existing base model for the argument style, which varies by architecture), plus `pipeline/train/retrain_<name>_integ.sh` / `pipeline/predict/integ_screen_<name>_predict.sh` wrappers.
+
+**2. Match the output contract.** `predict_<name>.py` must write one CSV per dataset to `<testset_dir>/results_meta/<dataset>.csv` with columns `Compound_ID, Protein_ID, Predicted_scores, label_predict` (add `label_original` too when run in train/eval mode) -- this is the only thing `data_adapter/result_process_data_integ_and_evalu.py` and the MetaLearner's data loader (`meta_data_loader.py`) actually require.
+
+**3. Register the model name**, all overridable without code edits:
+
+| Where | How |
+|---|---|
+| `meta_learner/meta_config.py` `model_names` | pass your own list, or edit the default (`~line 108`) |
+| `meta_learner/predict.py` | `--base_models <name1> <name2> ...` |
+| `data_adapter/result_process_data_integ_and_evalu.py` | trailing CLI args, anchor model first: `python result_process_data_integ_and_evalu.py <data_dir> <mode> <Model1> <Model2> ...` |
+| `data_adapter/label_ori_merge.py` | 4th CLI arg, the model count: `python label_ori_merge.py <data_dir> <mode> <datatype> <N>` |
+
+**4. Retrain the MetaLearner** (`meta_learner/meta_run_training.py`) -- swapping or adding a base model changes the fusion network's input distribution, so the shipped checkpoint no longer applies.
+
+---
+
 ## License & Attribution
 
-AdaptiveHIT's own code (`meta_learner/`, `data_adapter/`, `pipeline/`) is MIT-licensed (`LICENSE`). The four base models under `base_model/` each retain their own upstream license -- DeepConv-DTI is GPL-3.0 and is kept as an independent submodule/process so it never contaminates AdaptiveHIT's own MIT-licensed code; the other three are MIT/Apache-2.0. Full per-submodule provenance and the exact patches applied against each upstream repo are listed in `NOTICE.md`.
+AdaptiveHIT's own code (`meta_learner/`, `data_adapter/`, `pipeline/`) is MIT-licensed (`LICENSE`). The four base models under `base_model/` are vendored from their original authors' repositories (not forks) and each retains its own upstream license -- DeepConv-DTI is GPL-3.0 and is invoked as an independent process so it never contaminates AdaptiveHIT's own MIT-licensed code; the other three are MIT/Apache-2.0. Full per-model provenance (upstream commit, license, changes made) is listed in `NOTICE.md`.
 
 **Data provenance:** the `data/toy_dataset/` splits are shipped as a ready-to-run worked example; the script recovering their exact derivation from the original raw ChEMBL source table was not available at release time (see `NOTICE.md`). A larger 5-fold cross-validation dataset used for the manuscript's robustness experiments is not included here -- contact the corresponding author for access.
 
