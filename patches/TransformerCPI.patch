@@ -1,40 +1,3 @@
-From 713676c51c9308380d961738e02e52469e64f4f3 Mon Sep 17 00:00:00 2001
-From: yimiaozhu <yimiaozhu@users.noreply.github.com>
-Date: Mon, 3 Aug 2026 10:56:12 -0700
-Subject: [PATCH] Add AdaptiveHIT training/prediction integration for
- TransformerCPI (GPCR)
-
-- GPCR/main_integ_trans.py: training entrypoint used by the AdaptiveHIT
-  pipeline (GPU-memory-optimized batch collation on top of the existing
-  Encoder/Decoder/Predictor/Trainer/Tester classes in model.py)
-- GPCR/predict_trans.py / predict_trans_em.py: standalone prediction
-  entrypoints (the _em variant additionally extracts attention-weighted
-  fused features for downstream ensemble use)
-- GPCR/model.py: metric-computation fix (precision_recall_curve output
-  was mislabeled as tpr/fpr) plus additions supporting the integration
-  scripts above
-- GPCR/Radam.py: modernize deprecated positional add_/addcmul_ calls to
-  the current PyTorch keyword-argument API
-- Fix hardcoded Word2Vec model path (previously an absolute path on a
-  different cluster) to resolve relative to this file's own directory in
-  predict_trans.py, predict_trans_em.py, and mol_featurizer_integ_retrain.py
-- predict_trans_em.py previously imported a nonexistent mol_featurizer_new
-  module; reconciled to use mol_featurizer_integ_retrain (same module
-  predict_trans.py already uses successfully) since the two files'
-  featurizer usage is otherwise identical
----
- GPCR/Radam.py                        |  16 +-
- GPCR/main_integ_trans.py             | 434 +++++++++++++++++++++++++++
- GPCR/model.py                        |  82 ++++-
- GPCR/mol_featurizer_integ_retrain.py | 269 +++++++++++++++++
- GPCR/predict_trans.py                | 275 +++++++++++++++++
- GPCR/predict_trans_em.py             | 410 +++++++++++++++++++++++++
- 6 files changed, 1474 insertions(+), 12 deletions(-)
- create mode 100644 GPCR/main_integ_trans.py
- create mode 100644 GPCR/mol_featurizer_integ_retrain.py
- create mode 100644 GPCR/predict_trans.py
- create mode 100644 GPCR/predict_trans_em.py
-
 diff --git a/GPCR/Radam.py b/GPCR/Radam.py
 index 88c3e4b..9e4afd9 100644
 --- a/GPCR/Radam.py
@@ -634,10 +597,10 @@ index 4e0ae45..efc1c97 100644
          with open(filename, 'a') as f:
 diff --git a/GPCR/mol_featurizer_integ_retrain.py b/GPCR/mol_featurizer_integ_retrain.py
 new file mode 100644
-index 0000000..e84ed6a
+index 0000000..cd4f05f
 --- /dev/null
 +++ b/GPCR/mol_featurizer_integ_retrain.py
-@@ -0,0 +1,269 @@
+@@ -0,0 +1,272 @@
 +# -*- coding: utf-8 -*-
 +
 +import numpy as np
@@ -896,9 +859,12 @@ index 0000000..e84ed6a
 +    else:
 +        mol_featurizer_list = ['train', 'dev', 'test']
 +        for mission_name in mol_featurizer_list:
-+            dti_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name}/dti.csv'
-+            compound_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name}/compound.csv'
-+            protein_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name}/protein.csv'
++            # predict_process_data_intergrated_new.py writes DeepConv-DTI/data/val/,
++            # not .../dev/ -- alias here the same way the 'random' branch above already does.
++            mission_name_deep = 'val' if mission_name == 'dev' else mission_name
++            dti_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name_deep}/dti.csv'
++            compound_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name_deep}/compound.csv'
++            protein_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name_deep}/protein.csv'
 +            dir_output_train = fr'{data_dir}/TransformerCPI/data/{mission_name}'
 +
 +            os.makedirs(dir_output_train, exist_ok=True)
@@ -1605,6 +1571,3 @@ index 0000000..7b67257
 +        df_eva = pd.DataFrame(result_dic)
 +        df_eva.to_csv(os.path.join(output_dir, 'evaluation.csv'), index=False, mode='a')
 \ No newline at end of file
--- 
-2.34.1
-

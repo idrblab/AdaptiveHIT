@@ -122,10 +122,6 @@ for mission in "${missions[@]}"; do
         > $data_dir/log_meta/meta_full_esm2_xmol_prob_attention-$batch_size-$learning_rate-$mission.output 2>&1 &
     wait
 
-    # cd $model_env_dir/data_adapter
-    # python calculate_weights.py --input_dir $data_dir/data/end_merged --output_dir $data_dir/weights
-    # wait
-
 done
 
 

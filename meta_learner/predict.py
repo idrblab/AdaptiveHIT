@@ -12,7 +12,6 @@ from sklearn.metrics import roc_auc_score, average_precision_score, f1_score, ma
 import sys
 import time
 from datetime import datetime
-import pickle
 
 train_code_dir = os.path.dirname(os.path.abspath(__file__))
 if train_code_dir not in sys.path:
@@ -53,7 +52,6 @@ class EnsemblePredictor:
         self.models_mode = models_mode
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.meta_models = {}
-        self.weights = {}
         self.data_subdir = data_subdir
         # Only overrides a loaded checkpoint's saved embedding-dir paths when
         # explicitly provided; see override_config_paths().
@@ -173,21 +171,6 @@ class EnsemblePredictor:
             traceback.print_exc()
             return False
 
-    def load_weights(self, strategy: str, weights_path: str) -> bool:
-        """Load weight file for weighted averaging"""
-        try:
-            if os.path.exists(weights_path):
-                with open(weights_path, 'rb') as f:
-                    self.weights[strategy] = pickle.load(f)
-                print(f"  ✓ Loaded weights: {strategy}")
-                return True
-            else:
-                print(f"  ✗ Weights file not found: {weights_path}")
-                return False
-        except Exception as e:
-            print(f"  ✗ Failed to load weights {strategy}: {e}")
-            return False
-    
     def create_dataloader(self, data: pd.DataFrame, config: MetaConfig, batch_size: int = 512) -> DataLoader:
         """Create data loader for predictions"""
         config.data_subdir = self.data_subdir
@@ -243,112 +226,6 @@ class EnsemblePredictor:
         
         return proba, (proba >= 0.5).astype(int), weights_array
 
-    def predict_average(self, data: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
-        """Simple average ensemble prediction with equal weights"""
-        scores_list = []
-        for model in self.model_names:
-            col = f'Predicted_scores_{model}'
-            if col in data.columns:
-                scores_list.append(data[col].values)
-            else:
-                found = False
-                for c in data.columns:
-                    if model.replace('-', '_') in c or model in c:
-                        scores_list.append(data[c].values)
-                        found = True
-                        break
-                if not found:
-                    print(f"  Warning: Column for {model} not found, using zeros")
-                    scores_list.append(np.zeros(len(data)))
-        
-        scores = np.mean(scores_list, axis=0)
-        # Return equal weights for all samples
-        equal_weights = np.ones((len(data), self.n_models)) / self.n_models
-        return scores, (scores >= 0.5).astype(int), equal_weights
-    
-    def predict_weighted(self, data: pd.DataFrame, strategy: str) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
-        """Weighted average ensemble prediction with static weights"""
-        if strategy not in self.weights:
-            raise ValueError(f"Weights for {strategy} not loaded")
-        
-        static_weights = self.weights[strategy]
-        scores = np.zeros(len(data))
-        
-        for model in self.model_names:
-            weight = static_weights.get(model, 1.0 / self.n_models)
-            col = f'Predicted_scores_{model}'
-            if col in data.columns:
-                scores += weight * data[col].values
-            else:
-                for c in data.columns:
-                    if model.replace('-', '_') in c or model in c:
-                        scores += weight * data[c].values
-                        break
-        
-        # Create weight matrix (same weights for all samples)
-        weight_matrix = np.zeros((len(data), self.n_models))
-        for i, model in enumerate(self.model_names):
-            weight_matrix[:, i] = static_weights.get(model, 1.0 / self.n_models)
-        
-        return scores, (scores >= 0.5).astype(int), weight_matrix
-    
-    def predict_vote_all(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], np.ndarray, Optional[np.ndarray]]:
-        """Voting: output 1 only if all models predict 1"""
-        labels_list = []
-        for model in self.model_names:
-            col = f'label_predict_{model}'
-            if col not in data.columns:
-                score_col = f'Predicted_scores_{model}'
-                if score_col in data.columns:
-                    labels = (data[score_col].values >= 0.5).astype(int)
-                else:
-                    found = False
-                    for c in data.columns:
-                        if model.replace('-', '_') in c or model in c:
-                            if 'score' in c.lower():
-                                labels = (data[c].values >= 0.5).astype(int)
-                                found = True
-                                break
-                    if not found:
-                        print(f"  Warning: No predictions for {model}, using zeros")
-                        labels = np.zeros(len(data))
-            else:
-                labels = data[col].values
-            labels_list.append(labels)
-        
-        all_labels = np.stack(labels_list, axis=1)
-        vote_labels = (np.sum(all_labels, axis=1) == self.n_models).astype(int)
-        # Vote strategies don't have continuous weights
-        return None, vote_labels, None
-
-    def predict_vote_all_minus_one(self, data: pd.DataFrame) -> Tuple[Optional[np.ndarray], np.ndarray, Optional[np.ndarray]]:
-        """Voting: output 1 if at least N-1 models predict 1"""
-        labels_list = []
-        for model in self.model_names:
-            col = f'label_predict_{model}'
-            if col not in data.columns:
-                score_col = f'Predicted_scores_{model}'
-                if score_col in data.columns:
-                    labels = (data[score_col].values >= 0.5).astype(int)
-                else:
-                    found = False
-                    for c in data.columns:
-                        if model.replace('-', '_') in c or model in c:
-                            if 'score' in c.lower():
-                                labels = (data[c].values >= 0.5).astype(int)
-                                found = True
-                                break
-                    if not found:
-                        print(f"  Warning: No predictions for {model}, using zeros")
-                        labels = np.zeros(len(data))
-            else:
-                labels = data[col].values
-            labels_list.append(labels)
-        
-        all_labels = np.stack(labels_list, axis=1)
-        vote_labels = (np.sum(all_labels, axis=1) >= (self.n_models - 1)).astype(int)
-        return None, vote_labels, None
-
     def predict_all(self, data: pd.DataFrame, strategies: List[str], batch_size: int = 512) -> pd.DataFrame:
         """Make predictions for all strategies and save weights"""
         results = data.copy()
@@ -379,44 +256,6 @@ class EnsemblePredictor:
                         print(f"  ✓ Added base model predictions for {model_name}")
                     else:
                         print(f"  ✗ Base model {model_name} scores not found")
-                
-                elif strategy == 'average':
-                    proba, labels, weights = self.predict_average(data)
-                    results[f'Predicted_scores_{strategy}'] = proba
-                    results[f'label_predict_{strategy}'] = labels
-                    
-                    # Save average weights for each base model
-                    if weights is not None:
-                        for i, m in enumerate(self.model_names):
-                            results[f'Weight_{m}_{strategy}'] = weights[:, i]
-                        print(f"  ✓ Added average predictions + {len(self.model_names)} weight columns")
-                    else:
-                        print(f"  ✓ Added average predictions")
-                
-                elif strategy == 'vote-all':
-                    proba, labels, weights = self.predict_vote_all(data)
-                    results[f'Predicted_scores_{strategy}'] = proba if proba is not None else -1.0
-                    results[f'label_predict_{strategy}'] = labels
-                    print(f"  ✓ Added vote-all predictions")
-                
-                elif strategy == 'vote-all-1':
-                    proba, labels, weights = self.predict_vote_all_minus_one(data)
-                    results[f'Predicted_scores_{strategy}'] = proba if proba is not None else -1.0
-                    results[f'label_predict_{strategy}'] = labels
-                    print(f"  ✓ Added vote-all-1 predictions")
-                
-                elif strategy.startswith('weighted_'):
-                    proba, labels, weights = self.predict_weighted(data, strategy)
-                    results[f'Predicted_scores_{strategy}'] = proba
-                    results[f'label_predict_{strategy}'] = labels
-                    
-                    # Save static weights for each base model
-                    if weights is not None:
-                        for i, m in enumerate(self.model_names):
-                            results[f'Weight_{m}_{strategy}'] = weights[:, i]
-                        print(f"  ✓ Added weighted predictions + {len(self.model_names)} weight columns")
-                    else:
-                        print(f"  ✓ Added weighted predictions")
                 
                 elif strategy in self.meta_models:
                     proba, labels, weights = self.predict_meta(data, strategy, batch_size)
@@ -529,21 +368,6 @@ def find_model_path(model_dir: str, strategy: str, mode: int, models_mode: str) 
         return None
 
 
-def find_weights_path(weights_dir: str, strategy: str, mode: int, models_mode: str) -> Optional[str]:
-    """Find weights file path"""
-    base_strategy = strategy.replace('weighted_', '')
-    
-    possible_paths = [
-        os.path.join(weights_dir, f'weighted_{base_strategy}_{mode}_{models_mode}.pkl'),
-    ]
-    
-    for path in possible_paths:
-        if os.path.exists(path):
-            return path
-    
-    return None
-
-
 def save_metrics_to_csv(metrics_list: List[Dict], output_file: str):
     """Save evaluation metrics to CSV (append mode)"""
     if not metrics_list:
@@ -573,8 +397,6 @@ def main():
     parser.add_argument('--input_dir', type=str, required=True, help='Directory containing test CSV files')
     parser.add_argument('--model_dir', type=str, default=_DEFAULT_CHECKPOINT_DIR,
                        help='Directory containing trained models (default: the shipped pretrained checkpoint)')
-    parser.add_argument('--weights_dir', type=str, default=_DEFAULT_CHECKPOINT_DIR,
-                       help='Directory containing weight files (only needed for weighted_* strategies)')
     parser.add_argument('--output_dir', type=str, required=True, help='Directory to save results')
     parser.add_argument('--dataset_name', type=str, default='test', help='Dataset name for evaluation')
     parser.add_argument('--batch_size', type=int, default=512, help='Batch size for prediction')
@@ -625,23 +447,7 @@ def main():
     print("=" * 60)
     
     for s in args.strategies:
-        if s == 'average':
-            print(f"\n▶ Strategy: {s} (no loading needed)")
-            continue   
-        elif s == 'vote-all':
-            print(f"\n▶ Strategy: {s} (no loading needed)")
-            continue
-        elif s == 'vote-all-1':
-            print(f"\n▶ Strategy: {s} (no loading needed)")
-            continue
-        elif s.startswith('weighted_'):
-            w_path = find_weights_path(args.weights_dir, s, args.mode, args.models_mode)
-            if w_path:
-                predictor.load_weights(s, w_path)
-            else:
-                print(f"  ⚠ Weights not found for {s}")
-        
-        elif s.startswith('meta_'):
+        if s.startswith('meta_'):
             model_path = find_model_path(args.model_dir, s, args.mode, args.models_mode)
             if model_path:
                 predictor.load_meta_model(s, model_path, args.input_dir)

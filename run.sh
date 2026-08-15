@@ -81,9 +81,15 @@ fi
 
 # ---------------------------------------------------------------------------
 # TransformerCPI (pipeline/*.sh expects env name: transformerCPI)
-# No environment.yml/requirements.txt shipped -- dependency versions below
-# (python 3.6, pytorch>=1.2.0, rdkit==2019.03.3.0, gensim>=3.4.0) are exactly
-# what base_model/TransformerCPI/README.md documents.
+# No environment.yml/requirements.txt shipped -- base version constraints
+# (python 3.6, pytorch>=1.2.0, rdkit==2019.03.3.0, gensim>=3.4.0) are what
+# base_model/TransformerCPI/README.md documents, but that list is incomplete
+# in practice (verified by actually running the retraining pipeline):
+# scikit-learn is imported by model.py but isn't listed anywhere upstream,
+# and gensim>=3.4.0 unpinned resolves to gensim 4.x whose smart_open
+# dependency uses `from __future__ import annotations` (Python 3.7+ syntax),
+# a hard SyntaxError under this env's Python 3.6. gensim==3.8.3 +
+# smart_open<5.0 is the newest combination that's actually importable here.
 # ---------------------------------------------------------------------------
 if conda_env_exists transformerCPI; then
     echo "[transformerCPI] already exists, skipping"
@@ -91,7 +97,7 @@ else
     echo "[transformerCPI] creating (python 3.6, pytorch>=1.2.0, rdkit==2019.03.3.0)"
     conda create -y -n transformerCPI python=3.6
     conda run -n transformerCPI conda install -y -c conda-forge rdkit=2019.03.3.0
-    conda run -n transformerCPI pip install "torch>=1.2.0" numpy pandas "gensim>=3.4.0"
+    conda run -n transformerCPI pip install "torch>=1.2.0" numpy pandas scikit-learn "gensim==3.8.3" "smart_open<5.0"
 fi
 
 # ---------------------------------------------------------------------------

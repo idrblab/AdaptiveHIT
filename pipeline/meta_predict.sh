@@ -123,16 +123,12 @@ for mission in "${missions_list[@]}"; do
     python predict.py \
         --input_dir $data_dir/data/end_merged \
         --model_dir $data_dir/models_meta \
-        --weights_dir $data_dir/weights  \
         --output_dir $data_dir/results_meta/$mission \
         --dataset_name $mission \
         --mode 4\
         --models_mode all \
         --base_models TransformerCPI DeepConv-DTI ConPLex DrugBAN \
         --strategies \
-            average \
-            vote-all-1 \
-            weighted_logistic_balanced \
             meta_full_esm2_xmol_prob_attention-32-0.001 \
         --eval \
         --eval_modes all diff similarity diff_similarity  \

@@ -23,19 +23,7 @@ conda activate adaptivehit
 
 ## Quickstart (toy dataset, zero configuration)
 
-Try this first: it runs end-to-end against the shipped `data/toy_dataset/` with every path already concrete, nothing to fill in.
-
-**Option A -- no-embedding ensembling** (average / majority vote / weighted static logistic regression). Needs only the four base models' predictions, which the toy dataset already ships pre-merged in `end_merged/`:
-```bash
-python meta_learner/predict.py \
-    --input_dir data/toy_dataset/end_merged \
-    --output_dir /tmp/adaptivehit_out \
-    --weights_dir data/toy_dataset/weights \
-    --strategies average vote-all-1 weighted_logistic_balanced \
-    --eval
-```
-
-**Option B -- full MetaLearner** (probability-guided attention fusion, the architecture in the figure above). Needs ESM-2 protein + X-Mol drug embeddings first; generate them straight into the directories `meta_config.py` already defaults to (`data/embeddings/esm2_t36_3B_UR50D/`, `data/embeddings/xmol/`), so `predict.py` picks them up with no extra flags:
+Try this first: it runs end-to-end against the shipped `data/toy_dataset/` with every path already concrete, nothing to fill in. This runs the actual AdaptiveHIT model -- probability-guided attention fusion over the four base models' logits plus ESM-2/X-Mol representations (the architecture in the figure above) -- not a fixed-weight ensembling baseline. It needs ESM-2 protein + X-Mol drug embeddings first:
 ```bash
 python data_adapter/generate_esm2_embeddings.py \
     --prots_csv data/toy_dataset/id/toy_dataset_prots.csv \
@@ -50,9 +38,11 @@ python meta_learner/predict.py \
     --input_dir data/toy_dataset/end_merged \
     --output_dir /tmp/adaptivehit_out \
     --data_subdir toy_dataset \
+    --protein_emb_dir data/embeddings/esm2_t36_3B_UR50D \
+    --drug_emb_dir data/embeddings/xmol \
     --eval
 ```
-`--model_dir` defaults to the shipped pretrained checkpoint (`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`). `esm2_t36_3B_UR50D` is a 3B-parameter model (~11GB, downloaded once and cached by `fair-esm`) -- slow to load but the toy set is only 41 proteins / 49 drugs, so embedding generation itself is quick once loaded.
+`--model_dir` defaults to the shipped pretrained checkpoint (`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`). **`--protein_emb_dir`/`--drug_emb_dir` are not actually optional despite `meta_config.py` defining repo-relative defaults for them** -- the shipped checkpoint's own saved config carries the original training cluster's absolute paths (e.g. `/public/home/lixy/.../xmol_shared/...`), and `predict.py` only overrides those with the computed defaults when the flags are passed explicitly. Omitting them fails with `FileNotFoundError: Global feature library not found: /public/home/...` (verified by actually running it against a fresh clone). `esm2_t36_3B_UR50D` is a 3B-parameter model (~11GB, downloaded once and cached by `fair-esm`) -- slow to download, and `torch.hub`'s download isn't resumable, so a network interruption mid-download leaves a corrupt cache file at `~/.cache/torch/hub/checkpoints/esm2_t36_3B_UR50D.pt` that must be deleted before retrying (`generate_esm2_embeddings.py` doesn't currently validate/clean this up itself).
 
 ---
 
