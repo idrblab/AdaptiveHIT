@@ -67,16 +67,54 @@ fi
 # ConPLex (pipeline/*.sh expects env name: conplex)
 # base_model/ConPLex_dev/environment.yml is a full `conda env export` from
 # the original authors' machine (name: dsplat, python 3.7, cudatoolkit 10.2,
-# hardcoded build strings) -- forced to the `conplex` name below so it lines
-# up with pipeline/*.sh. Full-build-string exports like this are brittle
-# across conda versions/channels/OSes; if it fails to solve, re-create it
-# from base_model/ConPLex_dev/requirements.txt instead.
+# hardcoded build strings pinned to openssl<3) -- confirmed by actually
+# trying it that it no longer solves on a 2026 conda/channel snapshot.
+# base_model/ConPLex_dev/requirements.txt is NOT a full substitute either --
+# it's only 3 supplementary pip packages (dgl, pysmiles, mol2vec) on top of
+# a base scientific/DL stack it doesn't declare at all.
+#
+# The recipe below was built from ConPLex_dev's actual imports (not the
+# broken environment.yml) and verified end-to-end by actually running
+# main_integ_conplex.py to a completed training epoch on real data. Every
+# pin exists because leaving it unpinned broke something concretely:
+#   - dscript unpinned resolves to 0.2.8, an unrelated single-cell-genomics
+#     release that drags in torch 2.8 + a huge irrelevant dependency tree
+#     (scanpy, tiledbsoma, cellxgene-census, ...). dscript==0.1.9 is what
+#     the original environment.yml actually pinned.
+#   - dgl (latest) needs its C++ "graphbolt" extension built for the exact
+#     torch minor version installed and needs torchdata.datapipes (removed
+#     in modern torchdata) + pydantic transitively but undeclared. dgl==0.9.1
+#     predates graphbolt entirely, sidestepping all of that -- but its wheel
+#     index is keyed by torch version, hence -f .../wheels/torch-1.11/....
+#   - torchmetrics/pytorch_lightning unpinned pull torch>=2.0, silently
+#     upgrading torch out from under dgl 0.9.1 again. 0.9.3/1.8.6 are the
+#     newest versions of each still compatible with torch 1.11.
+#   - transformers==4.18.0 (the environment.yml's own pin) can no longer
+#     download models from huggingface.co in 2026: HF's server now returns
+#     redirect responses with a relative (schemeless) Location header, and
+#     4.18.0's hand-rolled downloader doesn't resolve it against the
+#     request's base URL (`MissingSchema` error) -- a real client/server
+#     compatibility decay, not an environment bug. transformers==4.30.2
+#     (+ a huggingface_hub/tokenizers pair it's compatible with) handles
+#     the redirect correctly via standard `requests` behavior.
+#   - deepchem is imported by src/featurizers/molecule.py but isn't in
+#     requirements.txt either; ==2.6.1 matches the original environment.yml.
 # ---------------------------------------------------------------------------
 if conda_env_exists conplex; then
     echo "[conplex] already exists, skipping"
 else
-    echo "[conplex] creating from base_model/ConPLex_dev/environment.yml"
-    conda env create -f base_model/ConPLex_dev/environment.yml -n conplex
+    echo "[conplex] creating (python 3.9, torch==1.11.0, dgl==0.9.1, transformers==4.30.2)"
+    conda create -y -n conplex python=3.9
+    conda run -n conplex conda install -y -c conda-forge rdkit=2022.03.2
+    conda run -n conplex pip install torch==1.11.0
+    conda run -n conplex pip install dgl==0.9.1 -f https://data.dgl.ai/wheels/torch-1.11/repo.html
+    conda run -n conplex pip install \
+        "dscript==0.1.9" "fair-esm==0.4.2" \
+        "transformers==4.30.2" "huggingface_hub>=0.14,<0.17" "tokenizers>=0.13,<0.14" \
+        "scikit-learn==1.0.2" "pandas==1.3.5" "numpy<2.0" omegaconf tqdm \
+        "torchmetrics==0.9.3" "pytorch_lightning==1.8.6" h5py \
+        pysmiles "mol2vec @ git+https://github.com/samoturk/mol2vec" pytdc \
+        "deepchem==2.6.1"
 fi
 
 # ---------------------------------------------------------------------------
@@ -102,17 +140,26 @@ fi
 
 # ---------------------------------------------------------------------------
 # DeepConv-DTI (pipeline/*.sh expects env name: DeepConv-DTI)
-# No environment.yml/requirements.txt shipped -- dependency ranges below
-# ("tensorflow>1.0,<2.0", "keras>2.0") are exactly what
-# base_model/DeepConv-DTI/README.md documents. python=3.7 chosen since
-# TensorFlow 1.x has no wheels for newer Python; adjust if yours differs.
+# No environment.yml/requirements.txt shipped -- base dependency ranges
+# ("tensorflow>1.0,<2.0", "keras>2.0") are what
+# base_model/DeepConv-DTI/README.md documents, but that's incomplete in
+# practice (verified by actually running the retraining pipeline):
+# - "keras>2.0" unpinned resolves to a modern standalone Keras (2.11) built
+#   against TF2's internal API (`tf.__internal__`), which doesn't exist in
+#   TF1 -- AttributeError at import time. keras==2.3.1 is the last release
+#   built for TF1.
+# - pip's default (modern) protobuf is incompatible with TF 1.15's
+#   pre-compiled *_pb2.py files ("Descriptors cannot not be created
+#   directly"). protobuf<3.20 fixes it (TF's own suggested workaround).
+# python=3.7 chosen since TensorFlow 1.x has no wheels for newer Python;
+# adjust if yours differs.
 # ---------------------------------------------------------------------------
 if conda_env_exists DeepConv-DTI; then
     echo "[DeepConv-DTI] already exists, skipping"
 else
-    echo "[DeepConv-DTI] creating (python 3.7, tensorflow>1.0,<2.0, keras>2.0)"
+    echo "[DeepConv-DTI] creating (python 3.7, tensorflow>1.0,<2.0, keras==2.3.1)"
     conda create -y -n DeepConv-DTI python=3.7
-    conda run -n DeepConv-DTI pip install "tensorflow>1.0,<2.0" "keras>2.0" numpy pandas scikit-learn
+    conda run -n DeepConv-DTI pip install "tensorflow>1.0,<2.0" "keras==2.3.1" "protobuf<3.20" numpy pandas scikit-learn
 fi
 
 # ---------------------------------------------------------------------------

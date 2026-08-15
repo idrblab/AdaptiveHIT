@@ -1,30 +1,3 @@
-From 88a195a44a15c4fea906e21e6cbc6f938173df29 Mon Sep 17 00:00:00 2001
-From: yimiaozhu <yimiaozhu@users.noreply.github.com>
-Date: Mon, 3 Aug 2026 10:53:16 -0700
-Subject: [PATCH] Add AdaptiveHIT training/prediction integration for ConPLex
-
-- main_integ_conplex.py: training entrypoint used by the AdaptiveHIT
-  pipeline (adds per-epoch CSV logging and multi-metric test evaluation
-  on top of the existing DTIDataModule/model stack)
-- predict_conplex.py / predict_conplex_em.py: standalone prediction
-  entrypoints (the _em variant additionally dumps fused drug+target
-  representations for downstream ensemble use)
-- src/data.py: add prepare_data_test/setup_test/test_dataloader_test to
-  DTIDataModule to support standalone prediction on an arbitrary test set
-- configs/default_config.yaml: tuned hyperparameters used for the
-  AdaptiveHIT base-model training run (SimpleCoembedding architecture,
-  batch_size 32, epochs 50, lr 1e-4, single-GPU device index)
----
- configs/default_config.yaml |  10 +-
- main_integ_conplex.py       | 617 ++++++++++++++++++++++++++++++++++++
- predict_conplex.py          | 324 +++++++++++++++++++
- predict_conplex_em.py       | 386 ++++++++++++++++++++++
- src/data.py                 | 165 +++++++++-
- 5 files changed, 1493 insertions(+), 9 deletions(-)
- create mode 100644 main_integ_conplex.py
- create mode 100644 predict_conplex.py
- create mode 100644 predict_conplex_em.py
-
 diff --git a/configs/default_config.yaml b/configs/default_config.yaml
 index 78136c1..303fba1 100644
 --- a/configs/default_config.yaml
@@ -1408,7 +1381,7 @@ index 0000000..df91335
 +    main()
 \ No newline at end of file
 diff --git a/src/data.py b/src/data.py
-index f57ab47..b46c4b4 100644
+index f57ab47..a3c3015 100644
 --- a/src/data.py
 +++ b/src/data.py
 @@ -53,7 +53,6 @@ def get_task_dir(task_name: str):
@@ -1506,11 +1479,11 @@ index f57ab47..b46c4b4 100644
      ):
  
 +        if train_path is None:
-+            train_path = f"{data_dir}/train/test.csv"
++            train_path = "train/test.csv"
 +        if val_path is None:
-+            val_path = f"{data_dir}/val/test.csv"
++            val_path = "val/test.csv"
 +        if test_path is None:
-+            test_path = f"{data_dir}/test/test.csv"
++            test_path = "test/test.csv"
 +
          self._loader_kwargs = {
              "batch_size": batch_size,
@@ -1627,6 +1600,3 @@ index f57ab47..b46c4b4 100644
      def train_dataloader(self):
          return DataLoader(self.data_train, **self._loader_kwargs)
  
--- 
-2.34.1
-

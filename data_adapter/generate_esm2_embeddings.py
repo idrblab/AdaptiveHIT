@@ -30,7 +30,7 @@ if __name__ == "__main__":
     out_dir = os.path.join(args.output_dir, args.datatype, "token_representations")
     os.makedirs(out_dir, exist_ok=True)
 
-    print("Loading esm2_t36_3B_UR50D (~11GB, downloaded once and cached under ~/.cache/torch/hub/checkpoints/)...")
+    print("Loading esm2_t36_3B_UR50D (~5.4GB, downloaded once and cached under ~/.cache/torch/hub/checkpoints/)...")
     model, alphabet = esm.pretrained.esm2_t36_3B_UR50D()
     model.eval()
     device = "cuda" if torch.cuda.is_available() else "cpu"

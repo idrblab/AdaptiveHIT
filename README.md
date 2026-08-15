@@ -42,7 +42,12 @@ python meta_learner/predict.py \
     --drug_emb_dir data/embeddings/xmol \
     --eval
 ```
-`--model_dir` defaults to the shipped pretrained checkpoint (`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`). **`--protein_emb_dir`/`--drug_emb_dir` are not actually optional despite `meta_config.py` defining repo-relative defaults for them** -- the shipped checkpoint's own saved config carries the original training cluster's absolute paths (e.g. `/public/home/lixy/.../xmol_shared/...`), and `predict.py` only overrides those with the computed defaults when the flags are passed explicitly. Omitting them fails with `FileNotFoundError: Global feature library not found: /public/home/...` (verified by actually running it against a fresh clone). `esm2_t36_3B_UR50D` is a 3B-parameter model (~11GB, downloaded once and cached by `fair-esm`) -- slow to download, and `torch.hub`'s download isn't resumable, so a network interruption mid-download leaves a corrupt cache file at `~/.cache/torch/hub/checkpoints/esm2_t36_3B_UR50D.pt` that must be deleted before retrying (`generate_esm2_embeddings.py` doesn't currently validate/clean this up itself).
+`--model_dir` defaults to the shipped pretrained checkpoint (`checkpoints/meta/meta_full_esm2_xmol_prob_attention/`). **`--protein_emb_dir`/`--drug_emb_dir` are not actually optional despite `meta_config.py` defining repo-relative defaults for them** -- the shipped checkpoint's own saved config carries the original training cluster's absolute paths (e.g. `/public/home/lixy/.../xmol_shared/...`), and `predict.py` only overrides those with the computed defaults when the flags are passed explicitly. Omitting them fails with `FileNotFoundError: Global feature library not found: /public/home/...` (verified by actually running it against a fresh clone). `esm2_t36_3B_UR50D` is a 3B-parameter model (~5.4GB, downloaded once and cached by `fair-esm`) -- `torch.hub`'s download isn't resumable, so a network interruption mid-download leaves a corrupt cache file at `~/.cache/torch/hub/checkpoints/esm2_t36_3B_UR50D.pt` that must be deleted before retrying (`generate_esm2_embeddings.py` doesn't currently validate/clean this up itself). On an unreliable connection, download it with a tool that *can* resume instead and let `fair-esm` find it already cached:
+```bash
+curl -fL -C - -o ~/.cache/torch/hub/checkpoints/esm2_t36_3B_UR50D.pt \
+    https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t36_3B_UR50D.pt
+```
+(verified end-to-end: full pipeline run against real, not zero-tensor-placeholder, ESM-2 embeddings)
 
 ---
 
@@ -77,7 +82,7 @@ python data_adapter/label_ori_merge.py ...
 ```bash
 pipeline/base_retrain.sh <data_dir> $(pwd)
 ```
-Each base model is a separate git submodule, trained via its own `main_integ_*.py` entrypoint (`base_model/<name>/.../main_integ_*.py`).
+Each base model is a separate git submodule, trained via its own `main_integ_*.py` entrypoint (`base_model/<name>/.../main_integ_*.py`) -- verified by actually running each of the 4 to a completed training epoch against `data/toy_dataset/`. One base model has an extra caveat: ConPLex's `configs/default_config.yaml` defaults to `contrastive: True`, which additionally requires the external DUDE decoy dataset (`base_model/ConPLex_dev/dataset/DUDe/full.tsv`, not shipped in this repo or its submodule) for its contrastive-learning regularization term; either supply that dataset yourself or pass a config with `contrastive: False` to train without it.
 
 **Retrain the MetaLearner** on your own merged Phase 0 output:
 ```bash
