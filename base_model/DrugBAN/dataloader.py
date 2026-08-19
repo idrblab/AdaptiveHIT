@@ -33,9 +33,9 @@ class DTIDataset(data.Dataset):
         num_virtual_nodes = self.max_drug_nodes - num_actual_nodes
 
         if num_virtual_nodes < 0:
-            print(f"Error: num_virtual_nodes should not be negative. Current value: {num_virtual_nodes}")
-            print(self.df.iloc[index]['SMILES'])
-
+            print(f"Warning: skipping molecule with {num_actual_nodes} atoms > max_drug_nodes={self.max_drug_nodes}: "
+                  f"{self.df.iloc[index]['SMILES']}")
+            return None
 
         virtual_node_bit = torch.zeros([num_actual_nodes, 1])
         actual_node_feats = torch.cat((actual_node_feats, virtual_node_bit), 1)

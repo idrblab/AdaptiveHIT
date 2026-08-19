@@ -6,7 +6,7 @@ except ImportError as e:
     comet_support = False
 from models import DrugBAN
 from time import time
-from utils import set_seed, graph_collate_func, mkdir
+from utils import set_seed, graph_collate_func, mkdir, drop_oversized_molecules
 from configs import get_cfg_defaults
 from dataloader import DTIDataset, MultiDataLoader
 from torch.utils.data import DataLoader
@@ -70,9 +70,9 @@ def main():
         train_path = os.path.join(dataFolder, 'train.csv')
         val_path = os.path.join(dataFolder, "val.csv")
         test_path = os.path.join(dataFolder, "test.csv")
-        df_train = pd.read_csv(train_path)
-        df_val = pd.read_csv(val_path)
-        df_test = pd.read_csv(test_path)
+        df_train = drop_oversized_molecules(pd.read_csv(train_path))
+        df_val = drop_oversized_molecules(pd.read_csv(val_path))
+        df_test = drop_oversized_molecules(pd.read_csv(test_path))
 
         train_dataset = DTIDataset(df_train.index.values, df_train)
         val_dataset = DTIDataset(df_val.index.values, df_val)
@@ -81,9 +81,9 @@ def main():
         train_source_path = os.path.join(dataFolder, 'source_train.csv')
         train_target_path = os.path.join(dataFolder, 'target_train.csv')
         test_target_path = os.path.join(dataFolder, 'target_test.csv')
-        df_train_source = pd.read_csv(train_source_path)
-        df_train_target = pd.read_csv(train_target_path)
-        df_test_target = pd.read_csv(test_target_path)
+        df_train_source = drop_oversized_molecules(pd.read_csv(train_source_path))
+        df_train_target = drop_oversized_molecules(pd.read_csv(train_target_path))
+        df_test_target = drop_oversized_molecules(pd.read_csv(test_target_path))
 
         train_dataset = DTIDataset(df_train_source.index.values, df_train_source)
         train_target_dataset = DTIDataset(df_train_target.index.values, df_train_target)

@@ -271,11 +271,11 @@ class DTIDataModule(pl.LightningDataModule):
     ):
 
         if train_path is None:
-            train_path = "train/test.csv"
+            train_path = "train.csv"
         if val_path is None:
-            val_path = "val/test.csv"
+            val_path = "val.csv"
         if test_path is None:
-            test_path = "test/test.csv"
+            test_path = "test.csv"
 
         self._loader_kwargs = {
             "batch_size": batch_size,

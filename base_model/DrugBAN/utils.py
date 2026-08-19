@@ -47,9 +47,30 @@ def set_seed(seed=1000):
 
 
 def graph_collate_func(x):
+    x = [sample for sample in x if sample is not None]
     d, p, y = zip(*x)
     d = dgl.batch(d)
     return d, torch.tensor(np.array(p)), torch.tensor(y)
+
+
+def drop_oversized_molecules(df, max_drug_nodes=290, smiles_col="SMILES"):
+    """Drop rows whose molecule has more heavy atoms than max_drug_nodes.
+
+    DTIDataset.__getitem__ pads every molecule graph up to max_drug_nodes
+    virtual nodes, which only works for molecules at or under that size.
+    Filtering here keeps predict_*.py's per-row output CSV aligned with the
+    input dataframe -- DTIDataset itself only skips these rows at batch time
+    (see graph_collate_func), which would otherwise desync predicted_scores
+    from df_test's row count.
+    """
+    from rdkit import Chem
+    num_atoms = df[smiles_col].map(lambda s: Chem.MolFromSmiles(s).GetNumAtoms())
+    oversized = num_atoms > max_drug_nodes
+    if oversized.any():
+        for smiles in df.loc[oversized, smiles_col]:
+            print(f"Warning: dropping molecule with > {max_drug_nodes} atoms: {smiles}")
+        df = df.loc[~oversized].reset_index(drop=True)
+    return df
 
 
 def mkdir(path):

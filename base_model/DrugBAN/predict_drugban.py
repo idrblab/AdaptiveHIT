@@ -6,7 +6,7 @@ except ImportError as e:
     comet_support = False
 from models import DrugBAN
 from time import time
-from utils import set_seed, graph_collate_func, mkdir
+from utils import set_seed, graph_collate_func, mkdir, drop_oversized_molecules
 from configs import get_cfg_defaults
 from dataloader import DTIDataset, MultiDataLoader
 from torch.utils.data import DataLoader
@@ -56,11 +56,11 @@ def main():
 
     if not cfg.DA.TASK:
         # test_path = os.path.join(dataFolder, "test.csv")
-        df_test = pd.read_csv(dataset_dir)
+        df_test = drop_oversized_molecules(pd.read_csv(dataset_dir))
         test_dataset = DTIDataset(df_test.index.values, df_test)
     else:
         test_target_path = os.path.join(dataFolder, 'target_test.csv')
-        df_test_target = pd.read_csv(test_target_path)
+        df_test_target = drop_oversized_molecules(pd.read_csv(test_target_path))
         test_target_dataset = DTIDataset(df_test_target.index.values, df_test_target)
 
     params = {'batch_size': cfg.SOLVER.BATCH_SIZE, 'shuffle': True, 'num_workers': cfg.SOLVER.NUM_WORKERS,

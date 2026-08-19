@@ -19,12 +19,17 @@ relicensed by this project.
 - Changes made for AdaptiveHIT: added `main_integ_conplex.py` (training
   entrypoint), `predict_conplex.py`/`predict_conplex_em.py` (standalone
   prediction), and `prepare_data_test`/`setup_test`/`test_dataloader_test`
-  methods on `src/data.py`'s `DTIDataModule` to support prediction on an
-  arbitrary test set; fixed a path-duplication bug in `DTIDataModule`'s
-  default `train_path`/`val_path`/`test_path` (was joined with `data_dir`
-  twice); replaced a hardcoded training-cluster absolute path in
-  `src/featurizers/protein.py`'s ProtBert loader with the portable
-  `Rostlab/prot_bert` HuggingFace model ID.
+  methods plus a `drug_target_collate_fn_test` (zero-pads variable-length
+  target embeddings, e.g. FoldSeek structure embeddings) on `src/data.py`'s
+  `DTIDataModule` to support prediction on an arbitrary test set; replaced
+  a hardcoded training-cluster absolute path in `src/featurizers/protein.py`'s
+  ProtBert loader with the portable `Rostlab/prot_bert` HuggingFace model ID.
+  `DTIDataModule`'s `train_path`/`val_path`/`test_path` constructor
+  parameters (added alongside the above) briefly regressed to the wrong
+  default filenames (`"train/test.csv"` etc. instead of `"train.csv"`),
+  which broke `main_integ_conplex.py` (it relies on the defaults); fixed to
+  match the real flat `<data_dir>/{train,val,test}.csv` layout used
+  throughout `dataset/`.
 
 ## DrugBAN (`base_model/DrugBAN`)
 
@@ -38,7 +43,14 @@ relicensed by this project.
 - Changes made for AdaptiveHIT: added `main_integ_drugban.py`,
   `predict_drugban.py`/`predict_drugban_em.py`, extended `trainer.py` with
   per-epoch val+test evaluation/logging and a new `Predicter` class for
-  standalone inference, minor validation additions to `dataloader.py`.
+  standalone inference; fixed a crash (also present upstream, unfixed)
+  where molecules with more heavy atoms than `DRUG.MAX_NODES` (290) made
+  `dataloader.py`'s virtual-node padding go negative and raise inside
+  `torch.zeros` -- oversized molecules are now dropped with a warning
+  before graph featurization (`utils.py`'s `drop_oversized_molecules`,
+  called from all 3 entrypoints) instead of crashing, and
+  `graph_collate_func` skips any that still reach it as a second layer of
+  defense.
 
 ## TransformerCPI (`base_model/TransformerCPI`)
 
