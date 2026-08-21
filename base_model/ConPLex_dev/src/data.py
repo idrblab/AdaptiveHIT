@@ -270,12 +270,16 @@ class DTIDataModule(pl.LightningDataModule):
         test_path: str = None,
     ):
 
+        # Relative to data_dir: process_data_base_model.py writes each split as
+        # <data_dir>/<split>/test.csv, so the defaults must be nested. Keeping
+        # them relative (rather than re-joining data_dir here) means Path's
+        # data_dir / <path> below works whether data_dir is absolute or not.
         if train_path is None:
-            train_path = "train.csv"
+            train_path = "train/test.csv"
         if val_path is None:
-            val_path = "val.csv"
+            val_path = "val/test.csv"
         if test_path is None:
-            test_path = "test.csv"
+            test_path = "test/test.csv"
 
         self._loader_kwargs = {
             "batch_size": batch_size,

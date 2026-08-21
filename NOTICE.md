@@ -1,7 +1,7 @@
 # Third-Party Notices
 
-AdaptiveHIT's own code (`meta_learner/`, `data_adapter/`, `pipeline/`) is
-released under the MIT license (see `LICENSE`). The four base compound-protein
+AdaptiveHIT's own code (`scripts/`, `bashes/`, `_ForFeatures/` and the
+top-level `*.sh` drivers) is released under the MIT license (see `LICENSE`). The four base compound-protein
 interaction (CPI) models it ensembles are vendored under `base_model/` --
 copied as regular tracked files (not a git submodule/fork) from a specific
 commit of the original authors' own repository, listed per-model below, with
@@ -21,15 +21,17 @@ relicensed by this project.
   prediction), and `prepare_data_test`/`setup_test`/`test_dataloader_test`
   methods plus a `drug_target_collate_fn_test` (zero-pads variable-length
   target embeddings, e.g. FoldSeek structure embeddings) on `src/data.py`'s
-  `DTIDataModule` to support prediction on an arbitrary test set; replaced
-  a hardcoded training-cluster absolute path in `src/featurizers/protein.py`'s
-  ProtBert loader with the portable `Rostlab/prot_bert` HuggingFace model ID.
-  `DTIDataModule`'s `train_path`/`val_path`/`test_path` constructor
-  parameters (added alongside the above) briefly regressed to the wrong
-  default filenames (`"train/test.csv"` etc. instead of `"train.csv"`),
-  which broke `main_integ_conplex.py` (it relies on the defaults); fixed to
-  match the real flat `<data_dir>/{train,val,test}.csv` layout used
-  throughout `dataset/`.
+  `DTIDataModule` to support prediction on an arbitrary test set.
+  `DTIDataModule` also gained `train_path`/`val_path`/`test_path`
+  constructor parameters; their defaults are kept *relative*
+  (`"train/test.csv"` etc.) to match the `<split>/test.csv` layout that
+  `scripts/data_processed/process_data_base_model.py` emits, and so that
+  `data_dir / <path>` resolves correctly whether `data_dir` is absolute or
+  relative. The ProtBert loader in `src/featurizers/protein.py` prefers the
+  local copy under `models/huggingface/transformers/Rostlabprot_bert`
+  (README's `huggingface.tar`) and falls back to the `Rostlab/prot_bert`
+  HuggingFace id when it isn't present, replacing a hardcoded
+  training-cluster absolute path.
 
 ## DrugBAN (`base_model/DrugBAN`)
 
@@ -50,7 +52,9 @@ relicensed by this project.
   before graph featurization (`utils.py`'s `drop_oversized_molecules`,
   called from all 3 entrypoints) instead of crashing, and
   `graph_collate_func` skips any that still reach it as a second layer of
-  defense.
+  defense. `trainer.py`'s `save_result_best` writes the best checkpoint to
+  both `<--output-model>` and the `*_best.model` name that `adaptivehit_train.sh`
+  consumes.
 
 ## TransformerCPI (`base_model/TransformerCPI`)
 
@@ -69,10 +73,13 @@ relicensed by this project.
   `main_integ_trans.py`/`predict_trans.py`/`predict_trans_em.py` use a
   batched, GPU-optimized data pipeline (`OptimizedDTIDataset`, a padded
   collate function, in-memory feature caching, explicit CUDA memory
-  cleanup) in place of upstream's per-sample loop; fixed a val/dev split
-  naming mismatch in `mol_featurizer_integ_retrain.py`'s non-random-split
-  branch; replaced a hardcoded training-cluster absolute path to
-  `word2vec_30.model` with a path relative to the script's own location.
+  cleanup) in place of upstream's per-sample loop; the retraining split is
+  named `val` consistently across `mol_featurizer_integ_retrain.py`,
+  `main_integ_trans.py` and `base_train.sh` (an earlier `dev`/`val`
+  mismatch made the featurizer write `TransformerCPI/data/dev/` while
+  training read `data/val/`); replaced hardcoded training-cluster absolute
+  paths to `word2vec_30.model` with paths relative to the script's own
+  location.
 
 ## DeepConv-DTI (`base_model/DeepConv-DTI`)
 
@@ -89,37 +96,41 @@ relicensed by this project.
 
 ## Third-party pretrained representations
 
-**X-Mol** (`data_adapter/xmol_weights/`, ~327MB, bundled via Git LFS): a
-frozen, pretrained SMILES/molecule representation model (ERNIE-style
-transformer, 768-dim, PaddlePaddle checkpoint format) used here as a
-compound feature extractor via `data_adapter/xmol_embed.py`, a from-scratch
-PyTorch re-implementation of the inference path (no PaddlePaddle runtime
-dependency). No paper citation or redistribution license for these specific
-weights was available at release time -- if you can trace their original
-source/license, please update this section before archiving.
+None of the three below are bundled in this repository; each is fetched by
+`pull_external_assets.sh` or downloaded manually per the **Manual Resource
+Download** table in `README.md`, and all three are `.gitignore`d.
 
-**ESM-2** (`esm2_t36_3B_UR50D`, ~5.4GB, **not bundled** in this repository
-or its Git LFS objects): Meta AI's protein language model, downloaded
-on first use via the `fair-esm` package (MIT-licensed) from
-`https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t36_3B_UR50D.pt` --
-see the Quickstart section in `README.md` for the exact download command.
+**X-Mol** (`_ForFeatures/xmol/`, ~1GB of weights + a ~1.35GB bundled Python
+runtime): a frozen, pretrained SMILES/molecule representation model
+(ERNIE-style transformer, 768-dim, PaddlePaddle checkpoint format) used as
+the compound feature extractor. No paper citation or redistribution license
+for these specific weights was available at release time -- if you can trace
+their original source/license, please update this section before archiving.
+
+**ProtBert** (`base_model/ConPLex_dev/models/huggingface/`, ~1.56GB):
+Rostlab's `prot_bert`, ConPLex's protein featurizer. Downloaded from the
+HuggingFace Hub automatically when the local copy is absent.
+
+**ESM-2** (`esm2_t36_3B_UR50D`, ~5.4GB): Meta AI's protein language model
+(`fair-esm`, MIT-licensed), AdaptiveHIT's protein representation.
 Reference: Lin, Z. et al. "Evolutionary-scale prediction of atomic-level
 protein structure with a language model." *Science* 379(6637), 1123-1130
 (2023). https://doi.org/10.1126/science.ade2574
 
 ## Data provenance
 
-`Smiles_Sequence_label_year_gene_activalue.csv`, a 529MB raw ChEMBL-derived
-table (Molecule ChEMBL ID, SMILES, Target ChEMBL ID, UniProt accession,
-document year, label, standard type/relation/value/units, gene names,
-organism, sequence), is the original source data this project's training
-splits were derived from. It is **not included** in this repository, and no
-script recovering the exact transform from that raw table to the
-`data/toy_dataset/{train,val,test}.csv` splits shipped here was available at
-release time -- those splits are shipped as-is as a small, ready-to-use
-worked example of the full pipeline.
+`dataset/toy_dataset/{train,val,test}.csv` is shipped as a small,
+ready-to-run worked example of the full pipeline.
 
-A larger 5-fold cross-validation variant of this dataset
-(`multisimi_dataset/`, ~417MB) was used for the robustness experiments
-described in the manuscript but is not included in this repository to keep
-it lean; contact the corresponding author for access.
+The datasets behind the manuscript's benchmarks and robustness experiments
+-- `dataset/Multisimi/`, `dataset/ChEMBL/`, `dataset/BindingDB/`,
+`dataset/HUMAN/`, `dataset/HUMAN_cold_pair/` -- are **not tracked in this
+repository**. Download `dataset.tar` via `pull_external_assets.sh` or the
+link in `README.md`'s **Manual Resource Download** table and extract it at
+the repository root so the splits land under `dataset/`.
+
+These splits derive from a raw ChEMBL-derived activity table (Molecule
+ChEMBL ID, SMILES, Target ChEMBL ID, UniProt accession, document year,
+label, standard type/relation/value/units, gene names, organism, sequence).
+That raw table is not included, and no script recovering the exact transform
+from it to the shipped splits was available at release time.

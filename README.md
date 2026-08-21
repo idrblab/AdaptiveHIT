@@ -9,128 +9,262 @@
 ```bash
 git clone <this-repo-url>
 cd AdaptiveHIT
+
+# Set up conda environments for base models and AdaptiveHIT
 bash run.sh
+
+# Download external pretrained assets (X-Mol, ESM-2, ProtBert, etc.)
+bash pull_external_assets.sh
+
+# Activate the main environment
 conda activate adaptivehit
 ```
 
-A plain `git clone` brings in everything -- the 4 base models under `base_model/` are vendored directly into this repository (not git submodules), so there's no separate init step. `run.sh` creates 5 conda envs (`adaptivehit`, `conplex`, `transformerCPI`, `DeepConv-DTI`, `drugban`) from each base model's own documented dependencies. It's idempotent -- safe to re-run. If a base model's env fails to solve (a few pin old CUDA/package versions from their original 2019-2023 releases), see the comments in `run.sh` or that model's own `README.md`.
+- `run.sh` creates 6 conda environments (`adaptivehit`, `conplex`, `transformerCPI`, `DeepConv-DTI`, `drugban`, `xmol`) from each component's own documented dependencies. `xmol` holds the PaddlePaddle 1.8.5 stack the X-Mol molecule featuriser needs; `adaptivehit_train.sh`/`adaptivehit_predict.sh` switch into it automatically for the embedding step. The four base models under `base_model/` are vendored as regular tracked files (no git submodules), so a plain `git clone` is enough. See `NOTICE.md` for each model's upstream commit and the changes applied on top.
+- `run.sh` is idempotent: it **skips any conda env that already exists**. If you previously created an env and want to pick up a changed pin (e.g. the CUDA bumps described below), remove it first — `conda env remove -n drugban` — and re-run.
+- **GPU note:** the base models pin CUDA builds from their original 2019-2023 releases. `run.sh` pins `cudatoolkit=11.0` / `+cu113` builds, which cover Ampere (A100, sm_80). Newer cards (Ada/Blackwell, e.g. RTX 40/50 series) are **not** covered by these old builds and will fail with "no kernel image is available for execution on the device"; on such hardware run with `CUDA_VISIBLE_DEVICES=-1` (CPU) or rebuild the envs against a newer torch.
+- **X-Mol runs on CPU.** PaddlePaddle 1.8.x — the last series with the `paddle.fluid` API X-Mol is written against — only ships CUDA 9.0/10.0 GPU builds, so no GPU build of it supports an A100. Molecule featurisation is a one-off step, so `xmol` installs the CPU build. If you have an older card and install a matching `paddlepaddle-gpu` yourself, set `XMOL_USE_CUDA=true`.
+- The `adaptivehit` env installs a **CPU-only** torch (`environment.yml` pins `pytorch::cpuonly` for portability). Swap it for a CUDA build to train or predict on GPU.
 
-Base-model and MetaLearner checkpoints (`checkpoints/`) and the X-Mol pretrained weights (`data_adapter/xmol_weights/`) are bundled via Git LFS and downloaded automatically by the `git clone` above (needs `git-lfs` installed). **ESM-2 is not bundled** -- it's fetched on first use, see Quickstart below.
+Base-model and adaptivehit checkpoints (`pretained_models/`) are bundled via Git LFS and downloaded automatically by the `git clone` above (needs `git-lfs` installed). 
+
+- `pull_external_assets.sh` downloads all five large assets below (X‑Mol weights, ESM‑2, ProtBert, the DUDE decoy set, and the CPI datasets) and extracts each into its target directory. It skips anything already present, so it is safe to re-run after an interrupted download. If it fails (e.g. the host is unreachable), download the files manually and place them in the target directories below.
+
+### Manual Resource Download (optional)
+
+| File Name | Description | File Size | Target Directory | Download Link |
+| --- | --- | --- | --- | --- |
+| `step_400000_20200326221400.tar` | Required model files for X-MOL | 993.5 MB | `./_ForFeatures/xmol/FT_to_embedding/data/model/step_400000/` | http://47.88.56.212/iTarget/step_400000_20200326221400.tar |
+| `esm2_t36_3B_UR50D.pt` | Pretrained ESM-2 weights | 5.28 GB | `./_ForFeatures/esm2/pretrained_esm2_models/` | http://47.88.56.212/iTarget/esm2_t36_3B_UR50D.pt |
+| `huggingface.tar` | Pretrained Rostlabprot_bert weights | 1.56 GB | `./base_model/ConPLex_dev/models/` | http://47.88.56.212/iTarget/huggingface.tar |
+| `full.tsv` | DUDE full dataset for conplex | 580 MB | `./base_model/ConPLex_dev/dataset/DUDe/` | http://47.88.56.212/iTarget/full.tsv |
+| `dataset.tar` | CPI datasets | 798 MB | `./` | http://47.88.56.212/iTarget/dataset.tar |
+
+After downloading the compressed files, extract them into the specified directories.
 
 ---
 
-## Quickstart (toy dataset)
+## Quick Start: Prediction with Pretrained Weights (Toy Dataset)
 
-Generate ESM-2/X-Mol embeddings for the shipped `data/toy_dataset/`, then run the pretrained MetaLearner:
+Use the provided toy dataset to run inference with the pretrained models:
 
 ```bash
-python data_adapter/generate_esm2_embeddings.py \
-    --prots_csv data/toy_dataset/id/toy_dataset_prots.csv \
-    --datatype toy_dataset --output_dir data/embeddings/esm2_t36_3B_UR50D
+# Predict using the four base models
+bash base_predict.sh ./dataset/toy_dataset toy_dataset
 
-python data_adapter/xmol_embed.py \
-    --drugs_csv data/toy_dataset/id/toy_dataset_drugs.csv \
-    --datatype toy_dataset --output_dir data/embeddings/xmol
-python data_adapter/prebuild_xmol_cache.py data/toy_dataset toy_dataset data/embeddings/xmol
-
-python meta_learner/predict.py \
-    --input_dir data/toy_dataset/end_merged \
-    --output_dir out/ \
-    --data_subdir toy_dataset \
-    --protein_emb_dir data/embeddings/esm2_t36_3B_UR50D \
-    --drug_emb_dir data/embeddings/xmol \
-    --eval
+# Predict using the AdaptiveHIT (ensemble)
+bash adaptivehit_predict.sh ./dataset/toy_dataset toy_dataset
 ```
 
+- Both scripts assume the pretrained checkpoints are already in place (shipped via Git LFS).
+- `base_predict.sh` saves results under `<data_dir>/data/`; `adaptivehit_predict.sh` saves results under `<data_dir>/results_adaptivehit/`.
+
+---
+
+## Retraining on Your Own Data (Toy Dataset)
+
+### 1. Retrain Base Models from Scratch
+
+```bash
+bash base_train.sh <data_dir> <mission> <learning_rate> <batch_size> <epochs> <dropout>
+```
+
+**Example:**
+```bash
+bash base_train.sh ./dataset/toy_dataset toy_dataset 0.001 32 50 0.1
+```
+
+This will train all four base models on your data (split must be prepared as described in the data preparation guide). The trained models are saved under `<data_dir>/data/*/models/` (where `*` is each base model name).
+
+### 2. Retrain the AdaptiveHIT
+
+```bash
+bash adaptivehit_train.sh <data_dir> <mission> <learning_rate> <batch_size> <epochs> <dropout>
+```
+
+**Example:**
+```bash
+bash adaptivehit_train.sh ./dataset/toy_dataset toy_dataset 0.001 32 50 0.1
+```
+
+The AdaptiveHIT uses the base models’ predictions and protein/drug representations to build the final model. Results are saved under `<data_dir>/models_adaptivehit/`.
+
+---
+
+## Add or Replace CPI Models for AdaptiveHIT
+
+You can easily extend AdaptiveHIT with your own base models.
+
+**Before running the commands**, you must prepare prediction results from your own model(s) for the training, validation, and test splits of your dataset. These results should be stored in a dedicated directory following the structure:
+
+```
+./dataset/<mission>/data/other_model/<model_name>/
+```
+
+Under that directory, provide three CSV files:
+
+- `train.csv`
+- `val.csv`
+- `test.csv`
+
+Each CSV must contain the following columns:
+
+- `Compound_ID`
+- `Protein_ID`
+- `Predicted_scores_<model_name>` (where `<model_name>` matches the argument passed to `adaptivehit_train_add_predictor.sh`)
+- `label_predict_<model_name>`
+
+Ensure that the `Compound_ID` and `Protein_ID` match the identifiers used in your dataset. The order of rows does not need to match the original data, as merging is based on these keys.
+
+After preparing the files, run:
+
+```bash
+bash base_predict.sh <data_dir> <mission>   # first, generate predictions for the base models
+bash adaptivehit_train_add_predictor.sh <data_dir> <mission> <lr> <batch_size> <epochs> <dropout> <ModelX,ModelY>
+```
+
+**Example:**
+```bash
+bash base_predict.sh ./dataset/Chembl Chembl
+bash adaptivehit_train_add_predictor.sh ./dataset/Chembl Chembl 0.001 32 50 0.1 ModelX,ModelY
+```
+
+This retrains the AdaptiveHIT using the new set of base models. The comma‑separated list of model names must match the naming convention used in your pipeline.
+
+---
+
+## Amino Acid Mutation Analysis (Interpretability)
+
+To analyze binding site and hot‑spot residues via systematic mutation, you must first prepare the necessary input files.
+
+**Input file preparation:**
+
+For each target protein–ligand pair (e.g., PDB entry `4zts` with ligand `4RK`), create a dedicated directory (e.g., `./dataset/toy_mutate/`) and place the following files:
+
+1. **`test_pdb.csv`** – contains the original protein sequence, SMILES, and binding‑site labels.  
+   Example content:
+   ```
+   PDB_ID,Ligand_Name,Protein,SMILES,label,siteslabel
+   4zts,4RK,GAMES...ESASKQS,CCc1ccc(cc1)...[nH]nn1,0,00100...00100
+   ```
+   The `siteslabel` is a binary string of length equal to the protein sequence, where `1` indicates a binding‑site residue (based on experimental structure or a 5‑Å cutoff).
+
+2. **`<PDB>_<Ligand>_region.csv`** – contains detailed residue‑level information.  
+   For example, `4zts_4RK_region.csv`:
+   ```
+   mutated_position,seq,seq-order,hot_spot_residues,ori_label_5A,Region
+   1,G,,0,0,d
+   2,A,,0,0,d
+   ...
+   9,Q,127,0,0,d
+   10,W,128,0,0,d
+   ...
+   ```
+   - `mutated_position`: position in the protein sequence (1‑based).
+   - `seq`: original amino acid at that position.
+   - `seq-order`: optional numbering (e.g., from structure); can be left empty if not used.
+   - `hot_spot_residues`: indicator (0/1) for known hot‑spot residues.
+   - `ori_label_5A`: original label (0/1) within 5Å of the ligand.
+   - `Region`: region classification (e.g., `d` for domain, can be customized).
+
+After preparing these files, run the analysis pipeline:
+
+1. **Generate mutated sequences** for your target proteins:
+   ```bash
+   python ./scripts/mutate/mutate_generatecsv.py
+   ```
+   (This script will read the prepared CSV files and produce mutated sequence CSV files.)
+
+2. **Run predictions** on the mutated dataset:
+   ```bash
+   bash base_predict.sh ./dataset/toy_mutate/mutated_data mutated_data
+   bash adaptivehit_predict.sh ./dataset/toy_mutate/mutated_data mutated_data
+   ```
+
+3. **Analyze the results** to identify critical residues:
+   ```bash
+   python ./scripts/mutate/analysis_allresult_mutate.py \
+       ./dataset/toy_mutate/mutated_data/results_adaptivehit/test_4zts_4RK.csv_results_4_all.csv \
+       ./dataset/toy_mutate/mutated_data/results_adaptivehit \
+       ./dataset/toy_mutate \
+       4zts_4RK
+   ```
+   In this example, `4zts_4RK` is the identifier used for that specific PDB‑ligand pair. Replace it with your own target identifier accordingly.
+
+---
+
+## Detailed Parameter Reference
+
+### `base_predict.sh`
 | Argument | Description |
-|---|---|
-| `--prots_csv` / `--drugs_csv` | protein CSV (`protid` + `sequence` columns) / drug CSV (SMILES column) |
-| `--datatype` | subdirectory name under `--output_dir` |
-| `--input_dir` | merged prediction+label CSVs -- see [Running on Your Own Data](#running-on-your-own-data) for how to produce these |
-| `--output_dir` | where predictions/metrics are written |
-| `--model_dir` | defaults to the shipped checkpoint `checkpoints/meta/meta_full_esm2_xmol_prob_attention/` |
-| `--protein_emb_dir` / `--drug_emb_dir` | **must be passed explicitly**, see note below |
-| `--eval` | also compute AUC/F1/MCC against the label column |
+|----------|-------------|
+| 1        | `data_dir` – path to the dataset directory (must contain `data/` subfolder) |
+| 2        | `mission` – a name for this run (used for dataset file naming) |
 
-> `--protein_emb_dir`/`--drug_emb_dir` look optional in `meta_config.py`'s defaults but aren't: the shipped checkpoint's saved config carries the original training cluster's absolute paths, and `predict.py` only overrides those when the flags are passed explicitly. Omitting them fails with `FileNotFoundError: Global feature library not found: ...`.
-
-`esm2_t36_3B_UR50D` (~5.4GB) downloads automatically on first run via `fair-esm`, cached to `~/.cache/torch/hub/checkpoints/`. On an unreliable connection, fetch it yourself and let `fair-esm` find it already cached:
-```bash
-curl -fL -C - -o ~/.cache/torch/hub/checkpoints/esm2_t36_3B_UR50D.pt \
-    https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t36_3B_UR50D.pt
-```
-
----
-
-## Running on Your Own Data
-
-The `pipeline/*.sh` scripts below `cd` into other directories internally, so pass **absolute paths** for your own data/output locations (e.g. `$(pwd)/mydata` from the repo root). The Python scripts above don't have this restriction.
-
-**0. Predict with the shipped base-model checkpoints** on your own test set:
-```bash
-pipeline/predict/integ_screen_conplex_predict.sh checkpoints/base_models/model-0.0005-64-0.1-conplex-858.model '' <testset_dir> $(pwd)/base_model/ConPLex_dev
-pipeline/predict/integ_screen_drugban_predict.sh checkpoints/base_models/model-0.0005-64-0.1-drugban-940.model '' <testset_dir> $(pwd)/base_model/DrugBAN
-pipeline/predict/integ_screen_trans_predict.sh   checkpoints/base_models/model-0.0005-128-0.1-trans-946.model '' <testset_dir> $(pwd)/base_model/TransformerCPI
-pipeline/predict/integ_screen_deep_predict.sh    checkpoints/base_models/model-0.0005-64-0.1-deep-969.model '' <testset_dir> $(pwd)/base_model/DeepConv-DTI
-```
-
+### `adaptivehit_predict.sh`
 | Argument | Description |
-|---|---|
-| 1 | base-model checkpoint (shipped under `checkpoints/base_models/`) |
-| 2 | CUDA device id, or `''` for CPU |
-| 3 | `<testset_dir>`, expected to contain `<testset_dir>/data/<subset>/*.csv` |
-| 4 | absolute path to the base model's directory under `base_model/` |
+|----------|-------------|
+| 1        | `data_dir` – same as above |
+| 2        | `mission` – same as above |
 
-Merge the 4 base models' predictions with your ground-truth labels:
-```bash
-python data_adapter/result_process_data_integ_and_evalu.py <testset_dir>/data predict
-python data_adapter/label_ori_merge.py <testset_dir> predict <datatype>
-```
+### `base_train.sh`
+| Argument | Description |
+|----------|-------------|
+| 1        | `data_dir` |
+| 2        | `mission` |
+| 3        | `learning_rate` – e.g., 0.001 |
+| 4        | `batch_size` – e.g., 32 |
+| 5        | `epochs` – number of training epochs |
+| 6        | `dropout` – dropout rate (e.g., 0.1) |
 
-Or run the full orchestration in one call: `pipeline/meta_train.sh $(pwd)` (training-time) / `pipeline/meta_predict.sh $(pwd)` (inference-time) -- both are internal cluster-authored scripts with more hardcoded assumptions than the ones above, so expect to read/adjust them before use.
-
-**1. Retrain the base models** from scratch on your own train/val/test split:
-```bash
-pipeline/base_retrain.sh <data_dir> $(pwd)
-```
-ConPLex defaults to `contrastive: True` (`configs/default_config.yaml`), which needs the external DUDE decoy dataset (`base_model/ConPLex_dev/dataset/DUDe/full.tsv`, not shipped). Supply it yourself, or pass a config with `contrastive: False`.
-
-**2. Retrain the MetaLearner** on your own merged Phase 0 output:
-```bash
-python meta_learner/meta_run_training.py \
-    --input_dir <phase0_merged_dir> --output_dir <outputs_dir> \
-    --data_subdir <name> --strategy probability_only
-```
-Then point `predict.py --model_dir` at your own retrained checkpoint instead of the shipped one.
+### `adaptivehit_train.sh`
+| Argument | Description |
+|----------|-------------|
+| 1        | `data_dir` |
+| 2        | `mission` – also used as AdaptiveHIT's `--data_subdir` |
+| 3–6     | same as `base_train.sh` (`learning_rate`, `batch_size`, `epochs`, `dropout`) |
 
 ---
 
-## Adding or Replacing a Base Model
+## Tips for Customizing Your Runs
 
-The MetaLearner's fusion network and the data-merge scripts size themselves off however many base models you tell them about -- nothing is hardcoded to exactly 4.
+### GPU Device Selection
+- All scripts use `export CUDA_VISIBLE_DEVICES=0` by default, which restricts execution to GPU 0.
+- To use a different GPU, modify this line in the script before running, or set the environment variable before calling the script:
+  ```bash
+  export CUDA_VISIBLE_DEVICES=1   # use GPU 1
+  bash base_predict.sh ...
+  ```
+- For multi‑GPU usage, you may need to adjust the `--gpus` arguments inside the individual base‑model scripts (not directly exposed in these wrappers). Refer to each base model’s documentation for distributed training support.
 
-**1. Add the model's code** under `base_model/<Name>/`, following the pattern of the existing 4: a `main_integ_<name>.py` training entrypoint and `predict_<name>.py` inference entrypoint (see any existing base model for the argument style, which varies by architecture), plus `pipeline/train/retrain_<name>_integ.sh` / `pipeline/predict/integ_screen_<name>_predict.sh` wrappers.
+### Pretrained Model Paths
+- The pretrained base‑model checkpoints are stored in `./pretained_models/base_models/` and are automatically detected.
+- If you have custom checkpoints, you can replace the files in that directory, or modify the `model_dir_*` variables at the top of each script (e.g., `base_predict.sh`) to point to your own paths.
 
-**2. Match the output contract.** `predict_<name>.py` must write one CSV per dataset to `<testset_dir>/results_meta/<dataset>.csv` with columns `Compound_ID, Protein_ID, Predicted_scores, label_predict` (add `label_original` too when run in train/eval mode) -- this is the only thing `data_adapter/result_process_data_integ_and_evalu.py` and the MetaLearner's data loader (`meta_data_loader.py`) actually require.
+### Hyperparameters for Retraining
+- `base_train.sh` and `adaptivehit_train.sh` accept learning rate, batch size, epochs, and dropout as positional arguments.
+- For `adaptivehit_train.sh`, AdaptiveHIT uses fixed internal parameters (`batch_size=32`, `lr=0.001`) in the final call to `adaptivehit_run_training.py`. To change these, edit the command directly in the script.
+- The `--strategy` and `--fusion_method` options in `adaptivehit_run_training.py` can be changed to experiment with different ensemble approaches (e.g., `probability_only`, `concat`, `gate`). See the script’s help or the AdaptiveHITConfig class for details.
 
-**3. Register the model name**, all overridable without code edits:
+### Where to Find Logs and Outputs
+- Each base model writes its stdout/stderr to `$data_dir/data/<model>/<model>.file`.
+- AdaptiveHIT training logs are stored in `$data_dir/log_adaptivehit/`.
+- Final predictions and evaluation results are placed in `$data_dir/results_adaptivehit/` and `$data_dir/data/end_merged/`, respectively.
+- All directories are automatically created if they do not exist.
 
-| Where | How |
-|---|---|
-| `meta_learner/meta_config.py` `model_names` | pass your own list, or edit the default (`~line 108`) |
-| `meta_learner/predict.py` | `--base_models <name1> <name2> ...` |
-| `data_adapter/result_process_data_integ_and_evalu.py` | trailing CLI args, anchor model first: `python result_process_data_integ_and_evalu.py <data_dir> <mode> <Model1> <Model2> ...` |
-| `data_adapter/label_ori_merge.py` | 4th CLI arg, the model count: `python label_ori_merge.py <data_dir> <mode> <datatype> <N>` |
+### Using the Manual Pipeline Step by Step
+If you prefer to run each component separately (e.g., for debugging), you can execute the Python commands shown above directly, after ensuring that all prerequisite files (embeddings, merged CSV files) exist. The scripts `result_process_data_integ_and_evalu.py`, `label_ori_merge.py`, and `adaptivehit_run_training.py` each accept command‑line arguments that are self‑explanatory; run them with `--help` for details.
 
-**4. Retrain the MetaLearner** (`meta_learner/meta_run_training.py`) -- swapping or adding a base model changes the fusion network's input distribution, so the shipped checkpoint no longer applies.
+### Note
+When retraining ConPLex, its default configuration uses contrastive learning which requires the external DUDE decoy dataset (`base_model/ConPLex_dev/dataset/DUDe/full.tsv`). If not available, set `contrastive: False` in its config file.
 
 ---
 
 ## License & Attribution
 
-AdaptiveHIT's own code (`meta_learner/`, `data_adapter/`, `pipeline/`) is MIT-licensed (`LICENSE`). The four base models under `base_model/` are vendored from their original authors' repositories (not forks) and each retains its own upstream license -- DeepConv-DTI is GPL-3.0 and is invoked as an independent process so it never contaminates AdaptiveHIT's own MIT-licensed code; the other three are MIT/Apache-2.0. Full per-model provenance (upstream commit, license, changes made) is listed in `NOTICE.md`.
+AdaptiveHIT's own code (`scripts/`) is MIT-licensed (`LICENSE`). The four base models under `base_model/` each retain their own upstream license -- DeepConv-DTI is GPL-3.0 and is kept as an independent submodule/process so it never contaminates AdaptiveHIT's own MIT-licensed code; the other three are MIT/Apache-2.0. Full per-submodule provenance and the exact patches applied against each upstream repo are listed in `NOTICE.md`.
 
-**Data provenance:** the `data/toy_dataset/` splits are shipped as a ready-to-run worked example; the script recovering their exact derivation from the original raw ChEMBL source table was not available at release time (see `NOTICE.md`). A larger 5-fold cross-validation dataset used for the manuscript's robustness experiments is not included here -- contact the corresponding author for access.
+**Data provenance:** The `dataset/toy_dataset/` splits are shipped as a ready-to-run worked example. All other datasets, including the `dataset/multisimi/`，`dataset/ChEMBL/`，`dataset/BindingDB/`，`dataset/HUMAN/`，`dataset/HUMAN_cold_pair/` dataset used for the manuscript's robustness experiments, are now fully available for download. You can obtain them by running `pull_external_assets.sh` or by downloading the corresponding archives manually from the links provided in the **Manual Resource Download** section above, and place all extracted files under the `dataset/` directory.
 
 ## Citation
 

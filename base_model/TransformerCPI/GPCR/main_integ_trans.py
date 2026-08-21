@@ -287,7 +287,7 @@ if __name__ == "__main__":
     # 预加载所有数据集
     print("Loading datasets...")
     train_dataset = OptimizedDTIDataset(device, dir_input_train, dir_input_train + 'dti.csv', "train")
-    valid_dataset = OptimizedDTIDataset(device, dir_input_dev, dir_input_dev + 'dti.csv', "dev")
+    valid_dataset = OptimizedDTIDataset(device, dir_input_dev, dir_input_dev + 'dti.csv', "val")
     test_dataset = OptimizedDTIDataset(device, dir_input_test, dir_input_test + 'dti.csv', "test")
 
     max_AUC_dev = 0

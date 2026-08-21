@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-shot environment setup for AdaptiveHIT.
 #
-# Creates the main `adaptivehit` conda env (meta_learner/ + data_adapter/)
+# Creates the main `adaptivehit` conda env (scripts/ + _ForFeatures/)
 # plus one env per base_model/* model, using the exact env names
 # pipeline/*.sh already hardcodes (conplex, transformerCPI, DeepConv-DTI,
 # drugban) so those scripts work unmodified afterwards.
@@ -42,7 +42,7 @@ echo "[tos] accepting Anaconda ToS for pkgs/main and pkgs/r (needed for cudatool
 conda tos accept --override-channels -c https://repo.anaconda.com/pkgs/main -c https://repo.anaconda.com/pkgs/r
 
 # ---------------------------------------------------------------------------
-# Main environment (meta_learner/ + data_adapter/) -- see environment.yml
+# Main environment (scripts/ + _ForFeatures/) -- see environment.yml
 # ---------------------------------------------------------------------------
 if conda_env_exists adaptivehit; then
     echo "[adaptivehit] already exists, skipping"
@@ -208,6 +208,34 @@ else
     conda run -n drugban pip install dgllife==0.2.8 scikit-learn yacs prettytable
 fi
 
+# ---------------------------------------------------------------------------
+# X-Mol molecule embeddings (_ForFeatures/xmol, invoked by adaptivehit_*.sh)
+# X-Mol is a 2020 PaddlePaddle/ERNIE codebase written against the
+# `paddle.fluid` API, which was deprecated in Paddle 2.0 and removed in 2.6,
+# so 1.8.5 (the last 1.x release) is what it needs. Its sources are
+# Python-3-compatible, hence python 3.7 (the newest with cp37 paddle 1.8.5
+# wheels) rather than the original 2.7.
+#
+# CPU build on purpose: paddlepaddle-gpu 1.8.x only ships `post97`/`post107`
+# (CUDA 9.0/10.0) variants, neither of which has sm_80 kernels, so there is
+# no GPU build of this Paddle version that runs on an A100 at all. Embedding
+# extraction is a one-off featurisation step (~1.7 molecules/s per CPU core
+# here), so CPU is the portable choice; see adaptivehit_predict.sh's
+# XMOL_USE_CUDA if you have an older card and a matching paddlepaddle-gpu.
+#
+# protobuf<3.20 for the same reason as DeepConv-DTI above: paddle 1.8.5's
+# pre-generated *_pb2.py files fail against modern protobuf runtimes.
+# numpy<1.20 because paddle 1.8.5 uses np.bool/np.object aliases removed later.
+# ---------------------------------------------------------------------------
+if conda_env_exists xmol; then
+    echo "[xmol] already exists, skipping"
+else
+    echo "[xmol] creating (python 3.7, paddlepaddle==1.8.5 CPU, protobuf<3.20)"
+    conda create -y -n xmol python=3.7
+    conda run -n xmol pip install "paddlepaddle==1.8.5" "protobuf<3.20" "numpy<1.20" \
+        "scikit-learn==1.0.2" "pandas==1.3.5" six
+fi
+
 echo
-echo "Done. 5 conda envs ready: adaptivehit, conplex, transformerCPI, DeepConv-DTI, drugban."
+echo "Done. 6 conda envs ready: adaptivehit, conplex, transformerCPI, DeepConv-DTI, drugban, xmol."
 echo "Activate the one you need, e.g.: conda activate adaptivehit"

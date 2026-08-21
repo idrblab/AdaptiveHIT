@@ -1,0 +1,12 @@
+md5: 1fc343a384eeb7aa3a8299da70813c79
+frozen: true
+deps:
+- checksum: '"56492200-64ffa5a336580"'
+  size: 1447633408
+  hash: md5
+  path: http://47.88.56.212/iTarget/python.tar.gz
+outs:
+- hash: md5
+  path: python.tar.gz
+  md5: 87e974bccdd572159a09d54e5a16a808
+  size: 1447633408

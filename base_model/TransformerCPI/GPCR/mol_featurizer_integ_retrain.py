@@ -226,16 +226,11 @@ if __name__ == "__main__":
     if mode == 'random':
         random_list = list(range(6,11))
         for random_name in random_list:
-            mol_featurizer_list = ['train', 'dev', 'test']
+            mol_featurizer_list = ['train', 'val', 'test']
             for mission_name in mol_featurizer_list:
-                if mission_name == 'dev':
-                    mission_name_deep = 'val'
-                else:
-                    mission_name_deep = mission_name
-
-                dti_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/random_{random_name}/{mission_name_deep}/dti.csv'
-                compound_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/random_{random_name}/{mission_name_deep}/compound.csv'
-                protein_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/random_{random_name}/{mission_name_deep}/protein.csv'
+                dti_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/random_{random_name}/{mission_name}/dti.csv'
+                compound_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/random_{random_name}/{mission_name}/compound.csv'
+                protein_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/random_{random_name}/{mission_name}/protein.csv'
                 dir_output_train = fr'{data_dir}/TransformerCPI/data/random_{random_name}/{mission_name}'
 
                 compounds_file = os.path.join(dir_output_train, 'compounds.npy')
@@ -254,12 +249,11 @@ if __name__ == "__main__":
                 print('dti pair num:  ', str(dti_num), '!!!')
 
     else:
-        mol_featurizer_list = ['train', 'dev', 'test']
+        mol_featurizer_list = ['train', 'val', 'test']
         for mission_name in mol_featurizer_list:
-            mission_name_deep = 'val' if mission_name == 'dev' else mission_name
-            dti_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name_deep}/dti.csv'
-            compound_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name_deep}/compound.csv'
-            protein_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name_deep}/protein.csv'
+            dti_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name}/dti.csv'
+            compound_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name}/compound.csv'
+            protein_csv_file_dir = fr'{data_dir}/DeepConv-DTI/data/{mission_name}/protein.csv'
             dir_output_train = fr'{data_dir}/TransformerCPI/data/{mission_name}'
 
             os.makedirs(dir_output_train, exist_ok=True)

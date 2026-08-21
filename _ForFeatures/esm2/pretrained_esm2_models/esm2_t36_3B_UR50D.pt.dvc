@@ -1,0 +1,12 @@
+md5: 705356a960ce7d66891c3a8d8dcd891e
+frozen: true
+deps:
+- checksum: '"152712e2e-64ffba97a15c0"'
+  size: 5678116398
+  hash: md5
+  path: http://47.88.56.212/iTarget/esm2_t36_3B_UR50D.pt
+outs:
+- hash: md5
+  path: esm2_t36_3B_UR50D.pt
+  md5: d37a0d0dbe7431e48a72072b9180b16b
+  size: 5678116398

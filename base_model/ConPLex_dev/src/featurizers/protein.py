@@ -123,13 +123,24 @@ class ProtBertFeaturizer(Featurizer):
         self._max_len = 1024
         self.per_tok = per_tok
 
+        # Prefer the local copy shipped by README's huggingface.tar download
+        # (offline clusters); fall back to the Hub id when it isn't extracted.
+        local_protbert = (
+            Path(__file__).parent.parent.parent
+            / "models"
+            / "huggingface"
+            / "transformers"
+            / "Rostlabprot_bert"
+        )
+        protbert_src = local_protbert if local_protbert.exists() else "Rostlab/prot_bert"
+
         self._protbert_tokenizer = AutoTokenizer.from_pretrained(
-            "Rostlab/prot_bert",
+            protbert_src,
             do_lower_case=False,
             cache_dir=f"{MODEL_CACHE_DIR}/huggingface/transformers",
         )
         self._protbert_model = AutoModel.from_pretrained(
-            "Rostlab/prot_bert",
+            protbert_src,
             cache_dir=f"{MODEL_CACHE_DIR}/huggingface/transformers",
         )
         self._protbert_feat = pipeline(

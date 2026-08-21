@@ -11,3 +11,39 @@ myouts/
 # Local conda/venv
 .venv/
 venv/
+
+# Large third-party assets fetched by pull_external_assets.sh or downloaded
+# manually per README's "Manual Resource Download" table -- not tracked here.
+Resource_Download/
+_ForFeatures/esm2/pretrained_esm2_models/*.pt
+_ForFeatures/xmol/FT_to_embedding/data/model/step_400000/
+_ForFeatures/xmol/FT_to_embedding/__python/
+base_model/ConPLex_dev/models/huggingface/
+base_model/ConPLex_dev/dataset/DUDe/full.tsv
+
+# X-Mol's vendored runtime: NCCL shared/static libs (~158MB) and the unrelated
+# downstream benchmark data that ships in its source tree. Both arrive with the
+# python.tar.gz / step_400000 downloads, so they are not tracked here.
+_ForFeatures/xmol/FT_to_embedding/nccl_2.3.5/
+_ForFeatures/xmol/FT_to_embedding/package/task_data/
+
+# DVC runtime lock/temp state
+.dvc/tmp/
+
+# Partial downloads left by pull_external_assets.sh
+*.part
+
+# Datasets ship via dataset.tar (see README); only the toy examples are tracked.
+dataset/*
+!dataset/toy_dataset/
+!dataset/toy_mutate/
+
+# Artifacts the pipeline generates inside a dataset directory.
+dataset/*/part/
+dataset/*/part_new/
+dataset/*/id/
+dataset/*/data/
+dataset/*/results_meta/
+dataset/*/models_meta/
+dataset/*/log_meta/
+dataset/*/weights/

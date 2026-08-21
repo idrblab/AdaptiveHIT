@@ -225,6 +225,10 @@ class Trainer(object):
 
     def save_result_best(self):
         if self.config["RESULT"]["SAVE_MODEL"]:
+            # meta_train.sh consumes the *_best.model name; keep the exact
+            # --output-model path too, which predict_drugban.py is pointed at.
+            torch.save(self.best_model.state_dict(),
+                       f'{self.output_dir[:-6]}_best.model')
             torch.save(self.best_model.state_dict(),
                        self.output_dir)
     def save_result(self, i):
