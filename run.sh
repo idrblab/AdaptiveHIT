@@ -28,6 +28,25 @@ conda_env_exists() {
 }
 
 # ---------------------------------------------------------------------------
+# Every conda command below names standard channels (conda-forge, pytorch,
+# dglteam, defaults) rather than URLs, so which server they actually hit is
+# decided by the machine's own condarc, not by this script. A mirror
+# configured there can 403 or time out, which then looks like this script
+# failing. Warn up front instead of leaving that to guesswork -- but do not
+# override it: on some networks the mirror is the only thing fast enough.
+# ---------------------------------------------------------------------------
+mirrors=$(conda config --show channels channel_alias default_channels custom_channels 2>/dev/null \
+    | grep -oE 'https?://[^ ]+' \
+    | grep -vE '^https?://(repo\.anaconda\.com|conda\.anaconda\.org)(/|$)' \
+    | sort -u)
+if [ -n "$mirrors" ]; then
+    echo "[warn] conda channels are redirected to non-official hosts by this machine's condarc:"
+    echo "$mirrors" | sed 's/^/[warn]   /'
+    echo "[warn] If a step below fails with HTTP 403/404 or a timeout, that mirror is the cause."
+    echo "[warn] Inspect with:  conda config --show-sources   (edit or remove the mirror there)"
+fi
+
+# ---------------------------------------------------------------------------
 # Anaconda's `pkgs/main`/`pkgs/r` channels (aka `defaults`) require accepting
 # their Terms of Service before conda will install anything from them --
 # every `conda create -n X python=Y` below hits this, and it's where
@@ -167,21 +186,44 @@ fi
 #   just silently never uses the GPU. Official TF 1.15 GPU wheels also
 #   predate Ampere, same problem class as the other 3 models. NVIDIA
 #   maintains "nvidia-tensorflow", a patched TF 1.15 build with newer-GPU
-#   (incl. Ampere) support, published on its own package index -- swapped
-#   in below. NOT verified end-to-end from this sandbox (pypi.ngc.nvidia.com
-#   wasn't reachable here to test); verify this block actually installs and
-#   that `tf.test.is_built_with_cuda()` is True on your real GPU machine,
-#   and adjust the nvidia-tensorflow version pin if it's no longer available.
-# python=3.7 chosen since TensorFlow 1.x has no wheels for newer Python;
-# adjust if yours differs.
+#   support, published on its own package index -- swapped in below. Its
+#   last release, nv22.12, is a CUDA 11.8 build and per NVIDIA's release
+#   notes covers compute capability 6.0 and up, Hopper (sm_90) included, so
+#   it is the right build for anything from Pascal through H100/H800.
+#   Verify with `tf.test.is_built_with_cuda()` on your own GPU machine.
+# python=3.6 is the only version both builds exist for, and that is what
+# picks it: nv22.12 publishes cp36/cp38 wheels only (no cp37), while PyPI's
+# CPU fallback tensorflow 1.15.5 publishes cp36/cp37 only (no cp38). 3.7
+# would silently lose the GPU build, 3.8 would lose the fallback.
 # ---------------------------------------------------------------------------
 if conda_env_exists DeepConv-DTI; then
     echo "[DeepConv-DTI] already exists, skipping"
 else
-    echo "[DeepConv-DTI] creating (python 3.7, nvidia-tensorflow==1.15.5, keras==2.3.1)"
-    conda create -y -n DeepConv-DTI python=3.7
-    conda run -n DeepConv-DTI pip install nvidia-pyindex
-    conda run -n DeepConv-DTI pip install "nvidia-tensorflow==1.15.5+nv22.12" "keras==2.3.1" "protobuf<3.20" numpy pandas scikit-learn
+    echo "[DeepConv-DTI] creating (python 3.6, tensorflow 1.15.5, keras==2.3.1)"
+    conda create -y -n DeepConv-DTI python=3.6
+    # nvidia-tensorflow is not on PyPI (only a 0.0.1.dev placeholder squats
+    # the name), so it needs NVIDIA's own index. Naming that index directly
+    # rather than going through `nvidia-pyindex`: the helper points at
+    # pypi.ngc.nvidia.com, which no longer serves this package -- the index
+    # moved to pypi.nvidia.com -- and it works by rewriting the user-level
+    # pip.conf, a side effect on the whole machine that outlives this script.
+    # If the index is unreachable anyway, fall back to PyPI's CPU-only
+    # tensorflow rather than aborting under `set -e` and leaving every env
+    # after this one uncreated. DeepConv-DTI copes with that: it checks
+    # tf.test.is_gpu_available() and drops to /cpu:0.
+    if conda run -n DeepConv-DTI pip install \
+            --extra-index-url https://pypi.nvidia.com \
+            "nvidia-tensorflow==1.15.5+nv22.12"; then
+        echo "[DeepConv-DTI] nvidia-tensorflow installed (GPU build)"
+    else
+        echo "[warn] could not install nvidia-tensorflow==1.15.5+nv22.12 -- either"
+        echo "[warn] pypi.nvidia.com is unreachable or that pin is gone."
+        echo "[warn] Falling back to CPU-only tensorflow==1.15.5 from PyPI:"
+        echo "[warn] DeepConv-DTI will run, just never on the GPU. Fine for the"
+        echo "[warn] toy Quick Start; for training see the comment above this block."
+        conda run -n DeepConv-DTI pip install "tensorflow==1.15.5"
+    fi
+    conda run -n DeepConv-DTI pip install "keras==2.3.1" "protobuf<3.20" numpy pandas scikit-learn
 fi
 
 # ---------------------------------------------------------------------------

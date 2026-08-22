@@ -54,7 +54,7 @@ python prebuild_xmol_cache.py \
         "$ADAP_MODEL_ROOT/_ForFeatures/xmol/FT_to_embedding/data/for_output"
 
 echo "Generating protein embeddings with ESM-2 ..."
-conda activate esm2
+conda activate adaptivehit  # fair-esm lives in this env (see environment.yml)
 bash "$ADAP_MODEL_ROOT/_ForFeatures/esm2/bashes/template_esm2_t36_3B_UR50D.sh" "$data_dir" "$mission"
 
 # 2. Merge original labels
