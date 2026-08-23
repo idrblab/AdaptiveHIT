@@ -20,27 +20,66 @@ bash pull_external_assets.sh
 conda activate adaptivehit
 ```
 
-- `run.sh` creates 6 conda environments (`adaptivehit`, `conplex`, `transformerCPI`, `DeepConv-DTI`, `drugban`, `xmol`) from each component's own documented dependencies. `xmol` holds the PaddlePaddle 1.8.5 stack the X-Mol molecule featuriser needs; `adaptivehit_train.sh`/`adaptivehit_predict.sh` switch into it automatically for the embedding step. The four base models under `base_model/` are vendored as regular tracked files (no git submodules), so a plain `git clone` is enough. See `NOTICE.md` for each model's upstream commit and the changes applied on top.
-- `run.sh` is idempotent: it **skips any conda env that already exists**. If you previously created an env and want to pick up a changed pin (e.g. the CUDA bumps described below), remove it first — `conda env remove -n drugban` — and re-run.
-- **GPU note:** the base models pin CUDA builds from their original 2019-2023 releases. `run.sh` pins `cudatoolkit=11.0` / `+cu113` builds, which cover Ampere (A100, sm_80). Newer cards (Ada/Blackwell, e.g. RTX 40/50 series) are **not** covered by these old builds and will fail with "no kernel image is available for execution on the device"; on such hardware run with `CUDA_VISIBLE_DEVICES=-1` (CPU) or rebuild the envs against a newer torch.
-- **X-Mol runs on CPU.** PaddlePaddle 1.8.x — the last series with the `paddle.fluid` API X-Mol is written against — only ships CUDA 9.0/10.0 GPU builds, so no GPU build of it supports an A100. Molecule featurisation is a one-off step, so `xmol` installs the CPU build. If you have an older card and install a matching `paddlepaddle-gpu` yourself, set `XMOL_USE_CUDA=true`.
-- The `adaptivehit` env installs a **CPU-only** torch (`environment.yml` pins `pytorch::cpuonly` for portability). Swap it for a CUDA build to train or predict on GPU.
+`run.sh` creates 6 conda envs (`adaptivehit`, `conplex`, `transformerCPI`,
+`DeepConv-DTI`, `drugban`, `xmol`); the pipeline scripts switch between them
+automatically. Both scripts are idempotent and skip whatever already exists — to
+pick up a changed pin, remove that env first (`conda env remove -n drugban`) and
+re-run.
 
-Base-model and adaptivehit checkpoints (`pretained_models/`) are bundled via Git LFS and downloaded automatically by the `git clone` above (needs `git-lfs` installed). 
+`base_model/` is vendored as regular tracked files, not submodules, so a plain
+`git clone` is enough; `pretained_models/` arrives via Git LFS (needs
+`git-lfs`). Upstream commits and local changes are recorded in `NOTICE.md`.
 
-- `pull_external_assets.sh` downloads all five large assets below (X‑Mol weights, ESM‑2, ProtBert, the DUDE decoy set, and the CPI datasets) and extracts each into its target directory. It skips anything already present, so it is safe to re-run after an interrupted download. If it fails (e.g. the host is unreachable), download the files manually and place them in the target directories below.
+**GPU coverage differs per env**, since each pins the CUDA build of its original
+2019-2023 release:
+
+| Env | Build | Newest GPU covered |
+| --- | --- | --- |
+| `conplex`, `transformerCPI` | torch `+cu113` | Ampere (sm_80) |
+| `drugban` | torch 1.7.1 + `cudatoolkit=11.0` | Ampere (sm_80) |
+| `DeepConv-DTI` | `nvidia-tensorflow` (CUDA 11.8) | Hopper (sm_90); Blackwell works via PTX JIT |
+| `xmol` | PaddlePaddle 1.8.5, **CPU only** | — no GPU build of this series reaches Ampere |
+| `adaptivehit` | torch + `pytorch-cuda=12.1` | Hopper (sm_90) |
+
+On a newer card than its build covers, a step fails with "no kernel image is
+available for execution on the device"; run it with `CUDA_VISIBLE_DEVICES=-1` or
+rebuild that env against a newer torch (for Blackwell, a cu128 build).
+
+`xmol` is the one env with no GPU option at all: X-Mol is written against the
+`paddle.fluid` API, which Paddle dropped after 1.8.x, and every
+`paddlepaddle-gpu` 1.8.x wheel is either `.post97` (CUDA 9.0) or `.post107`
+(CUDA 10.0) — neither reaches sm_80. No Paddle release has both the API X-Mol
+needs and support for a modern GPU. Molecule featurisation is a one-off step, so
+this costs little; set `XMOL_USE_CUDA=true` only if you have a pre-Ampere card
+and install a matching `paddlepaddle-gpu` yourself.
 
 ### Manual Resource Download (optional)
 
-| File Name | Description | File Size | Target Directory | Download Link |
-| --- | --- | --- | --- | --- |
-| `step_400000_20200326221400.tar` | Required model files for X-MOL | 993.5 MB | `./_ForFeatures/xmol/FT_to_embedding/data/model/step_400000/` | http://47.88.56.212/iTarget/step_400000_20200326221400.tar |
-| `esm2_t36_3B_UR50D.pt` | Pretrained ESM-2 weights | 5.28 GB | `./_ForFeatures/esm2/pretrained_esm2_models/` | http://47.88.56.212/iTarget/esm2_t36_3B_UR50D.pt |
-| `huggingface.tar` | Pretrained Rostlabprot_bert weights | 1.56 GB | `./base_model/ConPLex_dev/models/` | http://47.88.56.212/iTarget/huggingface.tar |
-| `full.tsv` | DUDE full dataset for conplex | 580 MB | `./base_model/ConPLex_dev/dataset/DUDe/` | http://47.88.56.212/iTarget/full.tsv |
-| `dataset.tar` | CPI datasets | 798 MB | `./` | http://47.88.56.212/iTarget/dataset.tar |
+`pull_external_assets.sh` fetches all five from the mirror. To download by hand,
+prefer the upstream where one exists — it is the authoritative copy, and the
+mirror is a byte-identical duplicate of it.
 
-After downloading the compressed files, extract them into the specified directories.
+| File Name | Description | Size | Target Directory | Upstream | Mirror |
+| --- | --- | --- | --- | --- | --- |
+| `step_400000_20200326221400.tar` | X-MOL pretrained weights | 993.5 MB | `./_ForFeatures/xmol/FT_to_embedding/data/model/step_400000/` | [bm2-lab/X-MOL](https://github.com/bm2-lab/X-MOL) → "Pre_trained X-MOL" ([OneDrive](https://1drv.ms/u/s!BIa_gVKaCDngi2S994lMsp-Y3TWK?e=l5hbxi)) | [link](http://47.88.56.212/adaptivehit/step_400000_20200326221400.tar) |
+| `esm2_t36_3B_UR50D.pt` | Pretrained ESM-2 weights | 5.28 GB | `./_ForFeatures/esm2/pretrained_esm2_models/` | [Meta AI](https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t36_3B_UR50D.pt) | [link](http://47.88.56.212/adaptivehit/esm2_t36_3B_UR50D.pt) |
+| `huggingface.tar` | ProtBert weights (optional, see below) | 1.56 GB | `./base_model/ConPLex_dev/models/` | [Rostlab/prot_bert](https://huggingface.co/Rostlab/prot_bert) | [link](http://47.88.56.212/adaptivehit/huggingface.tar) |
+| `full.tsv` | DUDE decoy set, for retraining ConPLex | 580 MB | `./base_model/ConPLex_dev/dataset/DUDe/` | [ConPLex authors](https://cb.csail.mit.edu/conplex/data/full.tsv) | [link](http://47.88.56.212/adaptivehit/full.tsv) |
+
+Extract each archive into its target directory.
+
+Only the X-MOL weights are strictly required; ESM-2 is needed for protein
+embeddings, and `full.tsv` only to retrain ConPLex. `huggingface.tar` is
+optional because `ConPLex_dev/src/featurizers/protein.py` falls back to the Hub
+when the local copy is absent — download it only for a machine that cannot reach
+huggingface.co.
+
+The CPI datasets used for the manuscript's benchmarks (ChEMBL, Multisimi,
+BindingDB, HUMAN, HUMAN_cold_pair) are released with this work rather than
+mirrored from a third party; `pull_external_assets.sh` fetches them, or take
+[dataset.tar](http://47.88.56.212/adaptivehit/dataset.tar) (798 MB) and extract
+it at the repository root. Neither Quick Start below needs them —
+`dataset/toy_dataset/` ships in this repository.
 
 ---
 

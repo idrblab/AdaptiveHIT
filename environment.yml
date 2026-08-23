@@ -14,6 +14,7 @@ name: adaptivehit
 channels:
   - conda-forge
   - pytorch
+  - nvidia
   - defaults
 
 dependencies:
@@ -33,10 +34,14 @@ dependencies:
   - tqdm
 
   # ── Deep learning ─────────────────────────────────────────────────────────
-  # CPU build shown here for portability; swap for a CUDA build (see
-  # https://pytorch.org/get-started/locally/) if training on GPU.
+  # CUDA build: ESM-2 3B protein embeddings (_ForFeatures/esm2/main_gpu.py) are
+  # the heaviest step in the pipeline and are impractical on CPU, and the
+  # AdaptiveHIT model itself trains here too. cuda 12.1 covers Pascal through
+  # Hopper (sm_90). With no GPU, or on Blackwell (sm_120, needs a cu128 build),
+  # replace the pytorch-cuda line -- `pytorch::cpuonly` for CPU, or see
+  # https://pytorch.org/get-started/locally/ for a different CUDA version.
   - pytorch::pytorch
-  - pytorch::cpuonly
+  - pytorch::pytorch-cuda=12.1
 
   - pip:
     - fair-esm==2.0.0   # ESM-2 protein embeddings (embedding generation only)

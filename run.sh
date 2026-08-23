@@ -47,6 +47,23 @@ if [ -n "$mirrors" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Same class of problem one layer down: nvidia-pyindex, which earlier
+# versions of this script installed, writes pypi.ngc.nvidia.com into the
+# user-level pip.conf. That host stopped serving packages (the index moved
+# to pypi.nvidia.com), so every pip step below retries it five times per
+# package before falling through to the real index -- slow, and it buries
+# the real output. Not repaired automatically: pip.conf is machine-wide
+# config, and rewriting one behind the user's back is precisely what made
+# nvidia-pyindex a problem to begin with.
+# ---------------------------------------------------------------------------
+for pipconf in "${PIP_CONFIG_FILE:-}" "$HOME/.config/pip/pip.conf" "$HOME/.pip/pip.conf" /etc/pip.conf; do
+    [ -f "$pipconf" ] && grep -q 'pypi\.ngc\.nvidia\.com' "$pipconf" || continue
+    echo "[warn] $pipconf points pip at pypi.ngc.nvidia.com, which is dead."
+    echo "[warn] Every pip step below will retry it 5x per package. Drop that entry:"
+    echo "[warn]   grep -n ngc $pipconf     # then remove the URL from that line"
+done
+
+# ---------------------------------------------------------------------------
 # Anaconda's `pkgs/main`/`pkgs/r` channels (aka `defaults`) require accepting
 # their Terms of Service before conda will install anything from them --
 # every `conda create -n X python=Y` below hits this, and it's where

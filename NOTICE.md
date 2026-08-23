@@ -103,9 +103,12 @@ Download** table in `README.md`, and all three are `.gitignore`d.
 **X-Mol** (`_ForFeatures/xmol/`, ~1GB of weights + a ~1.35GB bundled Python
 runtime): a frozen, pretrained SMILES/molecule representation model
 (ERNIE-style transformer, 768-dim, PaddlePaddle checkpoint format) used as
-the compound feature extractor. No paper citation or redistribution license
-for these specific weights was available at release time -- if you can trace
-their original source/license, please update this section before archiving.
+the compound feature extractor. Upstream is https://github.com/bm2-lab/X-MOL
+(Apache-2.0); the pretrained weights are distributed from the OneDrive link
+its README gives under "Pre_trained X-MOL".
+Reference: Xue, D. et al. "X-MOL: large-scale pre-training for molecular
+understanding and diverse molecular analysis." *Science Bulletin* 67(9),
+899-902 (2022). Preprint: https://doi.org/10.1101/2020.12.23.424259
 
 **ProtBert** (`base_model/ConPLex_dev/models/huggingface/`, ~1.56GB):
 Rostlab's `prot_bert`, ConPLex's protein featurizer. Downloaded from the
