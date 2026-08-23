@@ -7,7 +7,7 @@
 ## Installation
 
 ```bash
-git clone <this-repo-url>
+git clone https://github.com/idrblab/AdaptiveHIT.git
 cd AdaptiveHIT
 
 # Set up conda environments for base models and AdaptiveHIT
@@ -20,44 +20,29 @@ bash pull_external_assets.sh
 conda activate adaptivehit
 ```
 
-`run.sh` creates 6 conda envs (`adaptivehit`, `conplex`, `transformerCPI`,
-`DeepConv-DTI`, `drugban`, `xmol`); the pipeline scripts switch between them
-automatically. Both scripts are idempotent and skip whatever already exists — to
-pick up a changed pin, remove that env first (`conda env remove -n drugban`) and
-re-run.
+`run.sh` creates 6 conda envs: `adaptivehit`, `conplex`, `transformerCPI`,
+`DeepConv-DTI`, `drugban`, `xmol`. `pretained_models/` arrives via Git LFS
+(needs `git-lfs`); see `NOTICE.md` for each base model's provenance.
 
-`base_model/` is vendored as regular tracked files, not submodules, so a plain
-`git clone` is enough; `pretained_models/` arrives via Git LFS (needs
-`git-lfs`). Upstream commits and local changes are recorded in `NOTICE.md`.
+**GPU coverage** — each env pins the CUDA build of its original release:
 
-**GPU coverage differs per env**, since each pins the CUDA build of its original
-2019-2023 release:
-
-| Env | Build | Newest GPU covered |
-| --- | --- | --- |
-| `conplex`, `transformerCPI` | torch `+cu113` | Ampere (sm_80) |
-| `drugban` | torch 1.7.1 + `cudatoolkit=11.0` | Ampere (sm_80) |
-| `DeepConv-DTI` | `nvidia-tensorflow` (CUDA 11.8) | Hopper (sm_90); Blackwell works via PTX JIT |
-| `xmol` | PaddlePaddle 1.8.5, **CPU only** | — no GPU build of this series reaches Ampere |
-| `adaptivehit` | torch + `pytorch-cuda=12.1` | Hopper (sm_90) |
+- `conplex`, `transformerCPI`, `drugban` — up to Ampere (sm_80)
+- `DeepConv-DTI` — up to Hopper (sm_90), Blackwell via PTX JIT
+- `adaptivehit` — up to Hopper (sm_90); for CPU, swap `pytorch-cuda` in
+  `environment.yml` for `pytorch::cpuonly`
+- `xmol` — **CPU only**: X-Mol needs the `paddle.fluid` API, dropped after
+  Paddle 1.8.x, and no `paddlepaddle-gpu` 1.8.x wheel goes past CUDA 10.0
 
 On a newer card than its build covers, a step fails with "no kernel image is
-available for execution on the device"; run it with `CUDA_VISIBLE_DEVICES=-1` or
-rebuild that env against a newer torch (for Blackwell, a cu128 build).
-
-`xmol` is the one env with no GPU option at all: X-Mol is written against the
-`paddle.fluid` API, which Paddle dropped after 1.8.x, and every
-`paddlepaddle-gpu` 1.8.x wheel is either `.post97` (CUDA 9.0) or `.post107`
-(CUDA 10.0) — neither reaches sm_80. No Paddle release has both the API X-Mol
-needs and support for a modern GPU. Molecule featurisation is a one-off step, so
-this costs little; set `XMOL_USE_CUDA=true` only if you have a pre-Ampere card
-and install a matching `paddlepaddle-gpu` yourself.
+available for execution on the device" — run it with `CUDA_VISIBLE_DEVICES=-1`
+or rebuild that env against a newer torch.
 
 ### Manual Resource Download (optional)
 
-`pull_external_assets.sh` fetches all five from the mirror. To download by hand,
-prefer the upstream where one exists — it is the authoritative copy, and the
-mirror is a byte-identical duplicate of it.
+`pull_external_assets.sh` fetches these from the mirror, plus the manuscript's
+benchmark datasets (ChEMBL, Multisimi, BindingDB, HUMAN, HUMAN_cold_pair,
+798 MB — neither Quick Start below needs them). To download by hand, prefer the
+upstream where one exists; the mirror is a byte-identical copy.
 
 | File Name | Description | Size | Target Directory | Upstream | Mirror |
 | --- | --- | --- | --- | --- | --- |
@@ -68,18 +53,9 @@ mirror is a byte-identical duplicate of it.
 
 Extract each archive into its target directory.
 
-Only the X-MOL weights are strictly required; ESM-2 is needed for protein
-embeddings, and `full.tsv` only to retrain ConPLex. `huggingface.tar` is
-optional because `ConPLex_dev/src/featurizers/protein.py` falls back to the Hub
-when the local copy is absent — download it only for a machine that cannot reach
-huggingface.co.
-
-The CPI datasets used for the manuscript's benchmarks (ChEMBL, Multisimi,
-BindingDB, HUMAN, HUMAN_cold_pair) are released with this work rather than
-mirrored from a third party; `pull_external_assets.sh` fetches them, or take
-[dataset.tar](http://47.88.56.212/adaptivehit/dataset.tar) (798 MB) and extract
-it at the repository root. Neither Quick Start below needs them —
-`dataset/toy_dataset/` ships in this repository.
+X-MOL weights and ESM-2 are required; `full.tsv` only to retrain ConPLex.
+`huggingface.tar` is optional — `ConPLex_dev/src/featurizers/protein.py` falls
+back to the Hub when the local copy is absent.
 
 ---
 
