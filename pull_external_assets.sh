@@ -22,7 +22,12 @@ BASE_URL="http://47.88.56.212/adaptivehit"
 ASSETS=(
     # python.tar.gz (X-Mol's bundled Python 2.7 runtime) is deliberately not
     # fetched: run.sh's `xmol` conda env replaces it.
-    "_ForFeatures/xmol/FT_to_embedding/data/model/step_400000/encoder_layer_0_ffn_fc_0.b_0|step_400000_20200326221400.tar|_ForFeatures/xmol/FT_to_embedding/data/model/step_400000|tar|"
+    # Extracts into data/model/, not data/model/step_400000/: the tarball's own
+    # top-level directory is step_400000, so the deeper destination nested it as
+    # step_400000/step_400000/ -- which X-Mol never finds (conf_pre/ft_conf.sh
+    # points CKPT_PATH at ./data/model/step_400000) and which also left the
+    # marker below unsatisfied, so every re-run downloaded the 1GB again.
+    "_ForFeatures/xmol/FT_to_embedding/data/model/step_400000/encoder_layer_0_ffn_fc_0.b_0|step_400000_20200326221400.tar|_ForFeatures/xmol/FT_to_embedding/data/model|tar|"
     # Meta's own copy: byte-identical to the mirror (both 5678116398 bytes).
     "_ForFeatures/esm2/pretrained_esm2_models/esm2_t36_3B_UR50D.pt|esm2_t36_3B_UR50D.pt|_ForFeatures/esm2/pretrained_esm2_models|raw|https://dl.fbaipublicfiles.com/fair-esm/models/esm2_t36_3B_UR50D.pt"
     # No upstream tarball: ProtBert lives on the HuggingFace Hub as a repo,
